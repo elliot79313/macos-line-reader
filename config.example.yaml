@@ -1,0 +1,70 @@
+# line-mac-reader configuration.
+# Copy to config.yaml and calibrate with scripts/diagnose_badges.py.
+# All coordinates are LOGICAL (point) pixels, i.e. what you see in
+# macOS "Screenshot" cross-hair — NOT Retina physical pixels.
+
+timezone: Asia/Taipei
+fallback_hours: 48          # rolling window when a chat has no last-read record
+output_dir: output
+debug_dir: debug
+state_db: state.sqlite3
+
+window:
+  move_window: true         # pin the LINE window for stable coordinates
+  x: 0
+  y: 25
+  width: 1100
+  height: 800
+
+# Regions are relative to the window's top-left corner (logical px).
+# Calibrate: run `python scripts/diagnose_badges.py --config config.yaml`
+# and adjust until the overlay boxes line up.
+regions:
+  chat_list:                # the scrollable conversation list (exclude icon rail)
+    x: 70
+    y: 90
+    width: 280
+    height: 690
+  messages:                 # the message transcript area of an open chat
+    x: 360
+    y: 90
+    width: 730
+    height: 620
+  chat_title:               # title bar of the open chat (used to sanity-check)
+    x: 360
+    y: 30
+    width: 500
+    height: 50
+  row_height: 68            # approximate height of one chat-list row
+
+# Unread badge detection: HSV color mask + contour filtering.
+# LINE currently uses a green badge (~#06C755). If your build shows a
+# different color, sample it with the diagnostic script's --sample flag.
+# OpenCV HSV ranges: H 0-179, S 0-255, V 0-255. Areas are physical px².
+badge:
+  hsv_lower: [55, 120, 120]
+  hsv_upper: [85, 255, 255]
+  min_area: 40
+  max_area: 2500
+  min_aspect: 0.6
+  max_aspect: 3.0
+
+ocr:
+  lang: chi_tra+jpn+eng
+  psm: 6                    # single uniform block; try 7 for single lines
+  upscale: 2.5              # 2-3x upscaling markedly improves chi_tra accuracy
+  binarize: true            # Otsu threshold after grayscale
+  invert_dark_background: true
+  min_confidence: 0.5       # messages below this get flagged in output
+  tesseract_cmd: null       # e.g. /opt/homebrew/bin/tesseract
+
+timing:                     # seconds; raise these on slower machines
+  app_launch_wait: 3.0
+  chat_open_wait: 1.2
+  scroll_wait: 0.7
+  click_wait: 0.4
+
+scroll:
+  step: 12                  # scroll-wheel units per upward scroll
+  max_scrolls: 60           # hard cap per chat
+  stall_limit: 3            # identical consecutive screens => reached top
