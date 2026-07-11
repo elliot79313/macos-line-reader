@@ -20,21 +20,21 @@ window:
 # Calibrate: run `python scripts/diagnose_badges.py --config config.yaml`
 # and adjust until the overlay boxes line up.
 regions:
-  chat_list:                # the scrollable conversation list (exclude icon rail)
+  chat_list:                # 側邊清單，必須含右側的時間/未讀 badge 欄（到分隔線為止）
     x: 70
     y: 90
-    width: 280
+    width: 350
     height: 690
-  messages:                 # the message transcript area of an open chat
-    x: 360
-    y: 90
-    width: 730
-    height: 620
-  chat_title:               # title bar of the open chat (used to sanity-check)
-    x: 360
-    y: 30
-    width: 500
-    height: 50
+  messages:                 # 訊息逐字稿區：上緣在標題列之下、下緣在輸入列之上
+    x: 425
+    y: 115
+    width: 660
+    height: 570
+  chat_title:               # 開啟對話的「標題列」——注意是標題那一行，不是上方的分頁列
+    x: 425
+    y: 75
+    width: 550
+    height: 38
   search_box:               # the sidebar search field (used by --chat)
     x: 80
     y: 52

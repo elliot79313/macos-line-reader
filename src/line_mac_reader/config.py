@@ -33,11 +33,17 @@ class WindowConfig:
 
 @dataclass
 class RegionsConfig:
-    """Screen regions, relative to the window's top-left, in logical pixels."""
+    """Screen regions, relative to the window's top-left, in logical pixels.
 
-    chat_list: Rect = field(default_factory=lambda: Rect(70, 90, 280, 690))
-    messages: Rect = field(default_factory=lambda: Rect(360, 90, 730, 620))
-    chat_title: Rect = field(default_factory=lambda: Rect(360, 30, 500, 50))
+    Defaults measured against LINE desktop (2026) pinned at 1100x800:
+    the sidebar (including its time/badge column) runs to x~420, the tab
+    bar occupies y<75, the chat title bar sits at y~75-113, and the
+    message transcript starts below it.
+    """
+
+    chat_list: Rect = field(default_factory=lambda: Rect(70, 90, 350, 690))
+    messages: Rect = field(default_factory=lambda: Rect(425, 115, 660, 570))
+    chat_title: Rect = field(default_factory=lambda: Rect(425, 75, 550, 38))
     search_box: Rect = field(default_factory=lambda: Rect(80, 52, 250, 30))
     row_height: int = 68  # approximate chat-list row height
     # LINE shows an AD banner at the BOTTOM of the chat list; never treat

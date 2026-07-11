@@ -9,6 +9,7 @@ scripts/diagnose_badges.py before first use.
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 import time
 
@@ -52,6 +53,18 @@ def find_badges(img, cfg: Config) -> list[tuple[int, int, int, int]]:
         boxes.append((x, y, w, h))
     boxes.sort(key=lambda b: b[1])
     return boxes
+
+
+_RE_MEMBER_COUNT = re.compile(r"\s*[（(]\s*[\d,，]+\s*[)）]")
+
+
+def clean_title(text: str) -> str:
+    """Normalize an OCR'd title-bar string into a stable chat name.
+
+    Strips the member-count suffix (「群組名 (1,946)」) — it changes as
+    people join/leave, which would silently fork the last_read state key.
+    """
+    return _RE_MEMBER_COUNT.sub("", text).strip(" |｜﹒·．.")
 
 
 def usable_rows(img_height_px: int, exclude_pt: int, px_per_pt: float) -> int:
@@ -283,7 +296,7 @@ class ChatList:
         extra = (hint,) if hint else ()
         lines = ocr(self.screen.capture(title_region), self.cfg.ocr,
                     extra_words=extra)
-        return " ".join(l.text for l in lines).strip()
+        return clean_title(" ".join(l.text for l in lines))
 
     def verify_open_chat(self, name: str) -> bool:
         """OCR the open chat's title bar and fuzzily compare with `name`.

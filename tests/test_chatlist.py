@@ -1,4 +1,9 @@
-from line_mac_reader.chatlist import fuzzy_dup, names_match, usable_rows
+from line_mac_reader.chatlist import (
+    clean_title,
+    fuzzy_dup,
+    names_match,
+    usable_rows,
+)
 
 
 def test_exact_match():
@@ -53,6 +58,17 @@ def test_fuzzy_dup_keeps_distinct_chats():
     # similar personal names must NEVER merge — losing a chat is worse
     # than an occasional duplicate entry
     assert not fuzzy_dup("王大明", {"王小明"})
+
+
+def test_clean_title_strips_member_count():
+    assert clean_title("台股研究報告許願池_艾克斯 (8,007)") == "台股研究報告許願池_艾克斯"
+    assert clean_title("BNI華心-會員委員會（10）") == "BNI華心-會員委員會"
+    assert clean_title("智泉28 (69) ｜") == "智泉28"
+
+
+def test_clean_title_keeps_non_numeric_parens():
+    assert clean_title("2026 台復新創會晚宴 (籌備)") == "2026 台復新創會晚宴 (籌備)"
+    assert clean_title("何美雲-媽媽") == "何美雲-媽媽"
 
 
 def test_fuzzy_dup_known_limit_heavy_garble():
