@@ -72,26 +72,16 @@ def make_debug_saver(cfg: Config, run_stamp: str, enabled: bool):
 
 def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
                  state, now: datetime, fallback_hours: int,
-                 debug_save, chat_list, ignore_last_read: bool = False
-                 ) -> ChatResult:
+                 debug_save, chat_list, ignore_last_read: bool = False,
+                 processed: set[str] | None = None) -> ChatResult | None:
+    """Open, identify, and read one chat. Returns None for duplicate opens
+    (a misaligned --all row grid can land two clicks on the same chat)."""
     import pyautogui
 
+    from .chatlist import names_match
     from .line_controller import activate_line
     from .reader import ChatReader
 
-    last_read = None if ignore_last_read else state.get_last_read(chat.chat_key)
-    if last_read is not None:
-        read_from, source = last_read, "last_read"
-    else:
-        read_from, source = now - timedelta(hours=fallback_hours), "fallback_48h"
-
-    result = ChatResult(
-        chat_name=chat.chat_name,
-        chat_type="unknown",  # direct vs group is not reliably detectable yet
-        read_from=read_from,
-        read_from_source=source,
-        read_to=now,
-    )
     # Recover focus in case a previous step sent it elsewhere (e.g. an ad
     # click opened a browser) — otherwise every later click goes astray.
     activate_line()
@@ -100,21 +90,43 @@ def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
     if chat.click_point is not None:
         pyautogui.click(*chat.click_point)
         time.sleep(cfg.timing.chat_open_wait)
-        # Guard against calibration drift: confirm we opened the row we
-        # meant to before reading anything. Skip when the row name itself
-        # was unreadable (nothing to compare against).
-        if (not chat.chat_name.startswith("<")
-                and not chat_list.verify_open_chat(chat.chat_name)):
+        # Row-name OCR is unreliable (a misaligned grid returns the previous
+        # row's preview text), so the title bar is the canonical identity —
+        # it names the JSON entry and the last_read state key.
+        title = chat_list.read_title(hint=chat.chat_name)
+        chat_name = title or chat.chat_name
+        if title and not chat.chat_name.startswith("<") \
+                and not names_match(title, chat.chat_name):
+            log.info("Row OCR name %r corrected to title %r",
+                     chat.chat_name, title)
+    else:
+        if not chat_list.open_chat_by_search(chat.chat_name):
             raise RuntimeError(
-                f"點擊後開啟的對話標題與「{chat.chat_name}」不符，已跳過以免"
-                "讀錯人。多半是座標校正問題：請跑 scripts/diagnose_badges.py "
-                "確認 regions 區域框與點擊十字有對齊。")
-    elif not chat_list.open_chat_by_search(chat.chat_name):
-        raise RuntimeError(
-            f"搜尋開啟對話失敗（開啟的標題與「{chat.chat_name}」不符）")
+                f"搜尋開啟對話失敗（開啟的標題與「{chat.chat_name}」不符）")
+        chat_name = chat.chat_name  # explicit --chat: the user's name wins
 
+    if processed is not None:
+        key = "".join(chat_name.split()).lower()
+        if key in processed:
+            log.info("Skipping duplicate open of %r", chat_name)
+            return None
+        processed.add(key)
+
+    last_read = None if ignore_last_read else state.get_last_read(chat_name.strip())
+    if last_read is not None:
+        read_from, source = last_read, "last_read"
+    else:
+        read_from, source = now - timedelta(hours=fallback_hours), "fallback_48h"
+
+    result = ChatResult(
+        chat_name=chat_name,
+        chat_type="unknown",  # direct vs group is not reliably detectable yet
+        read_from=read_from,
+        read_from_source=source,
+        read_to=now,
+    )
     reader = ChatReader(cfg, screen, window_rect, debug_save=debug_save)
-    result.messages = reader.read_chat(chat.chat_name, cutoff=read_from)
+    result.messages = reader.read_chat(chat_name, cutoff=read_from)
     return result
 
 
@@ -260,13 +272,17 @@ def main(argv: list[str] | None = None) -> int:
 
     # --- read each chat (one failure must not abort the run) ----------------
     results: list[ChatResult] = []
+    processed: set[str] = set()
     for chat in chats:
         try:
-            results.append(process_chat(
+            r = process_chat(
                 chat, cfg, screen, window_rect, state, now,
                 fallback_hours, debug_save, chat_list,
                 ignore_last_read=args.ignore_last_read,
-            ))
+                processed=processed,
+            )
+            if r is not None:
+                results.append(r)
         except Exception as exc:  # noqa: BLE001 — per-chat fault isolation
             log.exception("Failed reading chat %r", chat.chat_name)
             results.append(ChatResult(

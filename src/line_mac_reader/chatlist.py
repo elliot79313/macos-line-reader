@@ -215,17 +215,27 @@ class ChatList:
                 return region.y + round(cy / px_per_pt)
         return None
 
+    def read_title(self, hint: str = "") -> str:
+        """OCR the open chat's title bar — the ground truth for identity.
+
+        Row-name OCR from the list is unreliable (a misaligned row grid
+        happily returns the previous row's preview text), so callers should
+        prefer this as the canonical chat name once a chat is open.
+        """
+        title_region = self.cfg.regions.chat_title.offset(
+            self.window_rect.x, self.window_rect.y)
+        extra = (hint,) if hint else ()
+        lines = ocr(self.screen.capture(title_region), self.cfg.ocr,
+                    extra_words=extra)
+        return " ".join(l.text for l in lines).strip()
+
     def verify_open_chat(self, name: str) -> bool:
         """OCR the open chat's title bar and fuzzily compare with `name`.
 
         Lenient on purpose: if the title can't be OCR'd at all we proceed
         with a warning rather than fail (title fonts OCR poorly at times).
         """
-        title_region = self.cfg.regions.chat_title.offset(
-            self.window_rect.x, self.window_rect.y)
-        lines = ocr(self.screen.capture(title_region), self.cfg.ocr,
-                    extra_words=(name,))
-        title = " ".join(l.text for l in lines).strip()
+        title = self.read_title(hint=name)
         if not title:
             log.warning("Could not OCR chat title; assuming %r opened", name)
             return True

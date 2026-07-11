@@ -127,6 +127,30 @@ def test_trailing_time_inside_text_line():
     assert items[0].time_of_day == (14, 5)
 
 
+def test_degraded_meridiem_is_time_label_not_sender():
+    """OCR often reads 「上午 10:32」 as 「午 10:32」 or 「下午」 as F/T —
+    these must be time labels, never senders or message text."""
+    items = parse([
+        L("午 10:32", 380, 100, w=110),
+        L("F 10:59", 380, 145, w=100),
+        L("桃園機場加強疏運整備", 130, 105),
+    ])
+    assert len(items) == 1
+    assert items[0].text == "桃園機場加強疏運整備"
+    assert items[0].time_of_day == (10, 32)
+    assert items[0].sender == "何美雲-媽媽"
+
+
+def test_ui_chrome_noise_dropped():
+    items = parse([
+        L("午", 380, 100, w=30),
+        L("輸入訊息", 130, 300, w=140),
+        L("儲存 另存新檔 分享 傳送至Keep筆記", 400, 200, w=500),
+        L("真正的訊息", 130, 100),
+    ])
+    assert [i.text for i in items] == ["真正的訊息"]
+
+
 def test_sticker_marker():
     items = parse([L("貼圖", 130, 100, w=70)])
     assert items[0].text == "[貼圖]"

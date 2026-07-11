@@ -39,13 +39,20 @@ from .utils_time import DateContext, parse_date_separator, parse_time_of_day, tz
 log = logging.getLogger(__name__)
 
 ME = "me"
+# Meridiem prefixes include OCR degradations seen in real captures:
+# 「上午」 often loses its first glyph (→「午」) and 「下午」 can come back
+# as a stray Latin letter (F/T) on dark backgrounds.
 _RE_TIME_ONLY = re.compile(
-    r"(?:(?:上午|下午|午前|午後)\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?"
+    r"(?:(?:上午|下午|午前|午後|午|[FT])\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?"
 )
 _RE_TRAILING_TIME = re.compile(
-    r"\s*(?:(?:上午|下午|午前|午後)\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?\s*$"
+    r"\s*(?:(?:上午|下午|午前|午後|午|[FT])\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?\s*$"
 )
 _READ_RECEIPTS = {"已讀", "已读", "既読", "Read"}
+# UI chrome that OCR picks up but is never message content: orphaned
+# meridiem fragments, the input-box placeholder, file/link hover actions.
+_NOISE_EXACT = {"午", "上午", "下午", "F", "T", "輸入訊息", "分享"}
+_NOISE_SUBSTR = ("另存新檔", "傳送至Keep筆記", "點選此處以開啟此連結")
 _KIND_MARKERS = {
     "貼圖": "sticker",
     "照片": "image",
@@ -133,6 +140,8 @@ def parse_layout(lines: list[OcrLine], width: int, chat_name: str,
     for raw in sorted(lines, key=lambda l: (l.bbox[1], l.bbox[0])):
         text = _strip_receipt(raw.text)
         if not text:
+            continue
+        if text in _NOISE_EXACT or any(s in text for s in _NOISE_SUBSTR):
             continue
         if _RE_TIME_ONLY.fullmatch(text):
             tod = parse_time_of_day(text)
