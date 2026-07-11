@@ -28,7 +28,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
-from line_mac_reader.chatlist import find_badges  # noqa: E402
+from line_mac_reader.chatlist import find_badges, usable_rows  # noqa: E402
 from line_mac_reader.config import load_config  # noqa: E402
 from line_mac_reader.line_controller import LineController  # noqa: E402
 from line_mac_reader.permissions import check_permissions  # noqa: E402
@@ -91,10 +91,17 @@ def main() -> int:
                        np.array(cfg.badge.hsv_upper, np.uint8))
     cv2.imwrite(str(out_dir / "mask.png"), mask)
 
-    boxes = find_badges(img, cfg)
     px_per_pt = screen.image_scale(img, region)
+    cut = usable_rows(img.shape[0], cfg.regions.list_bottom_exclude, px_per_pt)
+    boxes = find_badges(img[:cut, :], cfg)
     row_h = int(cfg.regions.row_height * px_per_pt)
     annotated = img.copy()
+    # Red hatch = AD keep-out strip (regions.list_bottom_exclude): rows and
+    # badges below this line are never clicked.
+    cv2.rectangle(annotated, (0, cut), (img.shape[1] - 1, img.shape[0] - 1),
+                  (0, 0, 255), 3)
+    cv2.putText(annotated, "AD keep-out", (8, min(cut + 30, img.shape[0] - 8)),
+                cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
     for (x, y, w, h) in boxes:
         cv2.rectangle(annotated, (x, y), (x + w, y + h), (0, 255, 0), 2)
         cy = y + h // 2

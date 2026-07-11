@@ -40,6 +40,9 @@ class RegionsConfig:
     chat_title: Rect = field(default_factory=lambda: Rect(360, 30, 500, 50))
     search_box: Rect = field(default_factory=lambda: Rect(80, 52, 250, 30))
     row_height: int = 68  # approximate chat-list row height
+    # LINE shows an AD banner at the BOTTOM of the chat list; never treat
+    # that strip as a row (clicking it opens a browser). Logical px.
+    list_bottom_exclude: int = 110
 
 
 @dataclass
@@ -186,6 +189,8 @@ def load_config(path: str | Path | None) -> Config:
                 setattr(cfg.regions, name, _rect_from(r[name]))
         if "row_height" in r:
             cfg.regions.row_height = int(r["row_height"])
+        if "list_bottom_exclude" in r:
+            cfg.regions.list_bottom_exclude = int(r["list_bottom_exclude"])
     if "badge" in data:
         b = data["badge"]
         for name in ("hsv_lower", "hsv_upper"):

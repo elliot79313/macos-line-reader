@@ -20,6 +20,16 @@ class LineNotFoundError(RuntimeError):
     pass
 
 
+def activate_line() -> None:
+    """Bring LINE back to the foreground.
+
+    Called before every chat open as cheap insurance: if a previous step
+    accidentally focused another app (e.g. an ad opened a browser), the run
+    recovers instead of clicking into the wrong application.
+    """
+    _run_osascript(f'tell application "{APP_NAME}" to activate')
+
+
 def _run_osascript(script: str) -> str:
     proc = subprocess.run(
         ["osascript", "-e", script], capture_output=True, text=True, timeout=15
@@ -76,7 +86,7 @@ class LineController:
             return out.returncode == 0
 
     def _activate(self) -> None:
-        _run_osascript(f'tell application "{APP_NAME}" to activate')
+        activate_line()
 
     def _pin_window(self, r: Rect) -> None:
         script = (

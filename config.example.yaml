@@ -41,6 +41,9 @@ regions:
     width: 250
     height: 30
   row_height: 68            # approximate height of one chat-list row
+  list_bottom_exclude: 110  # 聊天清單底部保留區（邏輯 px）：LINE 的廣告橫幅在
+                            # 清單最下方，這段永遠不當成對話列、不點擊。
+                            # 沒有廣告（付費版/畫面較高）可調小；診斷圖以紅框標示
 
 # Unread badge detection: HSV color mask + contour filtering.
 # LINE currently uses a green badge (~#06C755). If your build shows a

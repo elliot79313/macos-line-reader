@@ -76,6 +76,7 @@ def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
                  ) -> ChatResult:
     import pyautogui
 
+    from .line_controller import activate_line
     from .reader import ChatReader
 
     last_read = None if ignore_last_read else state.get_last_read(chat.chat_key)
@@ -91,6 +92,11 @@ def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
         read_from_source=source,
         read_to=now,
     )
+    # Recover focus in case a previous step sent it elsewhere (e.g. an ad
+    # click opened a browser) — otherwise every later click goes astray.
+    activate_line()
+    time.sleep(cfg.timing.click_wait)
+
     if chat.click_point is not None:
         pyautogui.click(*chat.click_point)
         time.sleep(cfg.timing.chat_open_wait)

@@ -1,4 +1,4 @@
-from line_mac_reader.chatlist import names_match
+from line_mac_reader.chatlist import names_match, usable_rows
 
 
 def test_exact_match():
@@ -21,3 +21,16 @@ def test_no_match():
 def test_empty_never_matches():
     assert not names_match("", "王小明")
     assert not names_match("王小明", "")
+
+
+def test_usable_rows_trims_ad_strip():
+    # 1380px-tall capture at 2x with a 110pt keep-out => cut at 1160
+    assert usable_rows(1380, 110, 2.0) == 1160
+
+
+def test_usable_rows_zero_exclude_keeps_all():
+    assert usable_rows(1380, 0, 2.0) == 1380
+
+
+def test_usable_rows_never_negative():
+    assert usable_rows(100, 110, 2.0) == 0

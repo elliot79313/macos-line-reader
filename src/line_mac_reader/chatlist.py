@@ -51,6 +51,12 @@ def find_badges(img, cfg: Config) -> list[tuple[int, int, int, int]]:
     return boxes
 
 
+def usable_rows(img_height_px: int, exclude_pt: int, px_per_pt: float) -> int:
+    """Pixel row where the clickable chat list ends: everything below is the
+    AD-banner keep-out strip (pure, testable)."""
+    return max(0, img_height_px - round(exclude_pt * px_per_pt))
+
+
 def is_excluded(name: str, patterns: tuple[str, ...]) -> bool:
     """Blocklist check for unread/--all scans (whitespace/case-insensitive
     substring), used to skip business/official accounts."""
@@ -96,6 +102,9 @@ class ChatList:
         region = self.region_on_screen()
         img = self.screen.capture(region)
         px_per_pt = self.screen.image_scale(img, region)
+        img = img[:usable_rows(img.shape[0],
+                               self.cfg.regions.list_bottom_exclude,
+                               px_per_pt), :]
 
         badges = find_badges(img, self.cfg)
         row_h_px = int(self.cfg.regions.row_height * px_per_pt)
@@ -136,6 +145,9 @@ class ChatList:
         region = self.region_on_screen()
         img = self.screen.capture(region)
         px_per_pt = self.screen.image_scale(img, region)
+        img = img[:usable_rows(img.shape[0],
+                               self.cfg.regions.list_bottom_exclude,
+                               px_per_pt), :]
         row_h_px = int(self.cfg.regions.row_height * px_per_pt)
 
         chats: list[UnreadChat] = []
