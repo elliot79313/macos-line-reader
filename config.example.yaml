@@ -111,3 +111,5 @@ scroll:
   max_scrolls: 60           # hard cap per chat
   stall_limit: 3            # identical consecutive screens => reached top
   cutoff_check_every: 3     # 快速連拍時每 N 張做一次「是否已捲過 cutoff」檢查
+  max_list_pages: 8         # 未讀掃描/--all 逐頁往下捲「聊天清單」的頁數上限
+                            # （每頁約 page_fraction 個清單高度，捲到底自動停）

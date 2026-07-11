@@ -111,6 +111,27 @@ class Screen:
         cv2.imwrite(str(path), img)
 
 
+def scroll_vertical(dy_pt: int, mode: str = "pixel", wheel_step: int = 12) -> None:
+    """Scroll at the current cursor position. Positive dy = up, negative = down.
+
+    "pixel" posts a native pixel-unit CGEvent (fast, precise); "wheel" falls
+    back to pyautogui wheel clicks.
+    """
+    if mode == "pixel":
+        try:
+            import Quartz
+
+            ev = Quartz.CGEventCreateScrollWheelEvent(
+                None, Quartz.kCGScrollEventUnitPixel, 1, dy_pt)
+            Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
+            return
+        except ImportError:
+            pass
+    import pyautogui
+
+    pyautogui.scroll(wheel_step if dy_pt > 0 else -wheel_step)
+
+
 def crop_padded_width(img, region: Rect):
     """Trim the columns mss pads onto macOS captures.
 

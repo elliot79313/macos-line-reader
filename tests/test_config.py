@@ -12,6 +12,7 @@ def test_defaults():
     assert isinstance(cfg.regions.chat_list, Rect)
     assert isinstance(cfg.regions.search_box, Rect)
     assert cfg.timing.search_wait == 1.0
+    assert cfg.scroll.max_list_pages == 8
 
 
 def test_missing_file_raises(tmp_path):

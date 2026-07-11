@@ -78,7 +78,7 @@ def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
     (a misaligned --all row grid can land two clicks on the same chat)."""
     import pyautogui
 
-    from .chatlist import names_match
+    from .chatlist import is_excluded, names_match
     from .line_controller import activate_line
     from .reader import ChatReader
 
@@ -111,6 +111,13 @@ def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
             log.info("Skipping duplicate open of %r", chat_name)
             return None
         processed.add(key)
+
+    # Row-name OCR can be garbled, so the blocklist is re-checked against
+    # the canonical title too (explicit --chat requests are never filtered).
+    if chat.click_point is not None \
+            and is_excluded(chat_name, cfg.filters.exclude_chats):
+        log.info("Excluded by filters.exclude_chats (title): %r", chat_name)
+        return None
 
     last_read = None if ignore_last_read else state.get_last_read(chat_name.strip())
     if last_read is not None:
@@ -246,34 +253,14 @@ def main(argv: list[str] | None = None) -> int:
     log.info("LINE window at %s, display scale %.1f",
              window_rect, screen.scaler.scale)
 
-    # --- decide which chats to read ------------------------------------------
+    # --- read chats (one failure must not abort the run) --------------------
     from .chatlist import is_excluded
 
     chat_list = ChatList(cfg, screen, window_rect)
-    if args.chat:
-        # Explicit chats, opened via the search box — unread state irrelevant,
-        # and the exclude blocklist does not apply to an explicit request.
-        chats = [UnreadChat(chat_name=n, row_index=i, click_point=None)
-                 for i, n in enumerate(args.chat)]
-    else:
-        if args.all_chats:
-            chats = chat_list.scan_visible_rows(debug_save=debug_save)
-        else:
-            chats = chat_list.scan_unread(debug_save=debug_save)
-        excluded = [c for c in chats
-                    if is_excluded(c.chat_name, cfg.filters.exclude_chats)]
-        if excluded:
-            log.info("Excluded by filters.exclude_chats: %s",
-                     ", ".join(c.chat_name for c in excluded))
-            chats = [c for c in chats if c not in excluded]
-    if args.only and not args.chat:
-        chats = [c for c in chats if args.only in c.chat_name]
-        log.info("--only %r matched %d chat(s)", args.only, len(chats))
-
-    # --- read each chat (one failure must not abort the run) ----------------
     results: list[ChatResult] = []
     processed: set[str] = set()
-    for chat in chats:
+
+    def handle(chat: UnreadChat) -> None:
         try:
             r = process_chat(
                 chat, cfg, screen, window_rect, state, now,
@@ -291,6 +278,38 @@ def main(argv: list[str] | None = None) -> int:
                 read_from_source="fallback_48h", read_to=now,
                 error=str(exc),
             ))
+
+    if args.chat:
+        # Explicit chats, opened via the search box — unread state irrelevant,
+        # and the exclude blocklist does not apply to an explicit request.
+        for i, name in enumerate(args.chat):
+            handle(UnreadChat(chat_name=name, row_index=i, click_point=None))
+    else:
+        # Walk the chat list page by page so coverage isn't limited to the
+        # rows visible in the first viewport. Click points always come from
+        # the CURRENT page's capture; overlap between pages is skipped by
+        # process_chat's title-based dedup.
+        chat_list.scroll_list_to_top()
+        for page in range(max(1, cfg.scroll.max_list_pages)):
+            if args.all_chats:
+                rows = chat_list.scan_visible_rows(debug_save=debug_save)
+            else:
+                rows = chat_list.scan_unread(debug_save=debug_save)
+            for row in rows:
+                if is_excluded(row.chat_name, cfg.filters.exclude_chats):
+                    log.info("Excluded by filters.exclude_chats: %r",
+                             row.chat_name)
+                    continue
+                if args.only and args.only not in row.chat_name:
+                    continue
+                handle(row)
+            if page + 1 >= cfg.scroll.max_list_pages:
+                log.info("Reached scroll.max_list_pages (%d)",
+                         cfg.scroll.max_list_pages)
+                break
+            if not chat_list.scroll_list_down():
+                log.info("Chat list bottom reached after %d page(s)", page + 1)
+                break
 
     # --- output & state update ----------------------------------------------
     out_dir = Path(cfg.output_dir)

@@ -112,6 +112,7 @@ class ScrollConfig:
     max_scrolls: int = 60     # hard stop per chat, safety net
     stall_limit: int = 3      # consecutive identical screens => top of chat
     cutoff_check_every: int = 3  # OCR every Nth screen during capture to test cutoff
+    max_list_pages: int = 8   # chat-LIST pages to walk in unread/--all scans
 
 
 @dataclass

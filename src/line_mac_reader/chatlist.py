@@ -174,6 +174,41 @@ class ChatList:
         log.info("Enumerated %d visible chat row(s)", len(chats))
         return chats
 
+    def _list_hash(self) -> str:
+        import hashlib
+
+        img = self.screen.capture(self.region_on_screen())
+        return hashlib.sha1(img.tobytes()).hexdigest()
+
+    def _scroll_list(self, dy_pt: int) -> None:
+        import pyautogui
+
+        from .screen import scroll_vertical
+
+        pyautogui.moveTo(*self.region_on_screen().center)
+        scroll_vertical(dy_pt, mode=self.cfg.scroll.mode,
+                        wheel_step=self.cfg.scroll.step)
+        time.sleep(self.cfg.timing.scroll_wait)
+
+    def scroll_list_to_top(self, max_iter: int = 15) -> None:
+        """Reset the chat list to its top before a paged scan."""
+        region = self.region_on_screen()
+        prev = self._list_hash()
+        for _ in range(max_iter):
+            self._scroll_list(region.height * 2)
+            cur = self._list_hash()
+            if cur == prev:
+                return
+            prev = cur
+
+    def scroll_list_down(self) -> bool:
+        """Advance the chat list by ~one page; False when already at the
+        bottom (screen no longer changes)."""
+        region = self.region_on_screen()
+        before = self._list_hash()
+        self._scroll_list(-int(region.height * self.cfg.scroll.page_fraction))
+        return self._list_hash() != before
+
     def open_chat_by_search(self, name: str) -> bool:
         """Open a chat via LINE's search box (--chat mode); works regardless
         of unread state. Returns False if the opened chat's title doesn't

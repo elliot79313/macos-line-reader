@@ -346,20 +346,11 @@ class ChatReader:
         page_fraction of the region per step — an order of magnitude fewer
         iterations than wheel clicks. "wheel" mode is the pyautogui fallback.
         """
-        if self.cfg.scroll.mode == "pixel":
-            try:
-                import Quartz
+        from .screen import scroll_vertical
 
-                dy = int(region.height * self.cfg.scroll.page_fraction)
-                ev = Quartz.CGEventCreateScrollWheelEvent(
-                    None, Quartz.kCGScrollEventUnitPixel, 1, dy)
-                Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
-                return
-            except ImportError:
-                log.warning("Quartz unavailable; falling back to wheel scroll")
-        import pyautogui
-
-        pyautogui.scroll(self.cfg.scroll.step)  # positive = scroll up
+        scroll_vertical(int(region.height * self.cfg.scroll.page_fraction),
+                        mode=self.cfg.scroll.mode,
+                        wheel_step=self.cfg.scroll.step)
 
     def parse_screen(self, img, chat_name: str, today: date) -> list[ParsedItem]:
         """One whole-image OCR pass, then layout reconstruction."""
