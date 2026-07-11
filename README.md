@@ -31,6 +31,12 @@ brew install tesseract tesseract-lang
 
 預設使用 **Apple Vision framework**（macOS 內建的 `VNRecognizeTextRequest`）：繁中辨識準確度遠高於 Tesseract、速度快、免安裝任何引擎，且直接回傳每行文字的座標，訊息版面（左右氣泡、時間、日期分隔列）都由座標重建。Tesseract 保留為備援（`ocr.engine: tesseract`）。
 
+**辨識率再提升的三道機制**（都在 `config.yaml` 的 `ocr` 區塊）：
+
+1. **最新辨識模型**：固定使用 Vision Revision 3 並關閉逐圖語言自動偵測，強制 zh-Hant 優先。
+2. **自訂詞彙 `custom_words`**：把常出現的人名、暱稱、行話列進去（例：`[郭毅驊, 出帳]`），Vision 的語言模型會偏向這些詞，罕見字人名的辨識率提升最明顯。對話名稱不用列——讀每個對話時會自動帶入。
+3. **低信心二次辨識 `retry_below`**（預設 0.8）：整圖辨識後，信心低於門檻的行會裁出小圖、放大 `retry_upscale` 倍重跑一次，結果更有信心才採用（座標保持原位）。只補弱行，速度影響極小；設 0 可關閉。
+
 ## 系統權限（必要，缺一不可）
 
 執行本工具的**終端機 App**（Terminal / iTerm2；若用其他方式啟動，則是對應的 Python 直譯器）需要兩項權限：

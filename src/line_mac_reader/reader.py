@@ -354,7 +354,7 @@ class ChatReader:
 
     def parse_screen(self, img, chat_name: str, today: date) -> list[ParsedItem]:
         """One whole-image OCR pass, then layout reconstruction."""
-        lines = ocr(img, self.cfg.ocr)
+        lines = ocr(img, self.cfg.ocr, extra_words=(chat_name,))
         px_per_pt = self.screen.image_scale(img, self._messages_region())
         return parse_layout(lines, img.shape[1], chat_name, today,
                             self.cfg.layout, px_per_pt=px_per_pt)

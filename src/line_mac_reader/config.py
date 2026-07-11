@@ -62,6 +62,9 @@ class BadgeConfig:
 class OcrConfig:
     engine: str = "vision"  # "vision" (Apple Vision, recommended) | "tesseract"
     vision_languages: tuple[str, ...] = ("zh-Hant", "ja", "en")
+    custom_words: tuple[str, ...] = ()  # names/jargon to bias Vision toward
+    retry_below: float = 0.8   # re-OCR lines below this confidence (0 = off)
+    retry_upscale: float = 2.0  # upscale factor for the per-line retry crop
     min_confidence: float = 0.5  # below this, messages are flagged for review
     # tesseract-only parameters:
     lang: str = "chi_tra+jpn+eng"

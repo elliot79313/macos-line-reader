@@ -58,6 +58,11 @@ ocr:
   engine: vision            # vision = Apple Vision framework（推薦，繁中準確度高、速度快）
                             # tesseract = 備援（需 brew install tesseract tesseract-lang）
   vision_languages: [zh-Hant, ja, en]
+  custom_words: []          # 提升人名/術語辨識率：把常出現的名字、暱稱、行話列進來
+                            # 例：custom_words: [郭毅驊, 何美雲, 基隆, 出帳]
+                            # （對話名稱不用列，程式讀取時會自動帶入）
+  retry_below: 0.8          # 信心低於此值的行會裁圖放大重辨識一次（0 = 關閉）
+  retry_upscale: 2.0        # 重辨識時的放大倍數
   min_confidence: 0.5       # messages below this get flagged in output
   # ---- tesseract-only（engine: tesseract 時才生效）----
   lang: chi_tra+jpn+eng

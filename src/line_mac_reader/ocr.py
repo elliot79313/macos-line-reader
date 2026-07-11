@@ -27,14 +27,18 @@ class OcrLine:
     confidence: float  # 0.0 - 1.0
 
 
-def ocr(img, cfg: OcrConfig) -> list[OcrLine]:
+def ocr(img, cfg: OcrConfig, extra_words: tuple[str, ...] = ()) -> list[OcrLine]:
     """Run OCR on an image (BGR or grayscale numpy array).
 
     Returns one OcrLine per text line, bboxes in the input image's pixels,
     confidence normalized to 0-1, sorted top-to-bottom.
+
+    extra_words: context-specific vocabulary (e.g. the current chat's name)
+    merged with cfg.custom_words to bias Vision's language model — rare name
+    characters recognize far better this way. Ignored by tesseract.
     """
     if cfg.engine == "vision":
-        return _ocr_vision(img, cfg)
+        return _ocr_vision(img, cfg, extra_words)
     return _ocr_tesseract(img, cfg)
 
 
@@ -57,7 +61,16 @@ def check_engine(cfg: OcrConfig) -> str | None:
 # Apple Vision engine
 # ---------------------------------------------------------------------------
 
-def _ocr_vision(img, cfg: OcrConfig) -> list[OcrLine]:
+def _ocr_vision(img, cfg: OcrConfig, extra_words: tuple[str, ...] = ()
+                ) -> list[OcrLine]:
+    lines = _vision_pass(img, cfg, extra_words)
+    if cfg.retry_below > 0:
+        lines = _retry_low_confidence(img, lines, cfg, extra_words)
+    return lines
+
+
+def _vision_pass(img, cfg: OcrConfig, extra_words: tuple[str, ...]
+                 ) -> list[OcrLine]:
     import cv2
     import Vision
     from Foundation import NSData
@@ -72,6 +85,15 @@ def _ocr_vision(img, cfg: OcrConfig) -> list[OcrLine]:
     request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
     request.setUsesLanguageCorrection_(True)
     request.setRecognitionLanguages_(list(cfg.vision_languages))
+    # Pin the newest recognition model — noticeably better on zh-Hant than
+    # the compatibility default — and stop per-image language re-detection.
+    if hasattr(Vision, "VNRecognizeTextRequestRevision3"):
+        request.setRevision_(Vision.VNRecognizeTextRequestRevision3)
+    if request.respondsToSelector_("setAutomaticallyDetectsLanguage:"):
+        request.setAutomaticallyDetectsLanguage_(False)
+    words = tuple(cfg.custom_words) + tuple(extra_words)
+    if words:
+        request.setCustomWords_([w for w in words if w])
 
     success, error = handler.performRequests_error_([request], None)
     if not success:
@@ -98,6 +120,59 @@ def _ocr_vision(img, cfg: OcrConfig) -> list[OcrLine]:
         ))
     lines.sort(key=lambda l: (l.bbox[1], l.bbox[0]))
     return lines
+
+
+def retry_crop_box(bbox: tuple[int, int, int, int], img_w: int, img_h: int,
+                   margin_ratio: float = 0.35) -> tuple[int, int, int, int]:
+    """Padded crop box around a line for the re-OCR pass (pure, testable).
+
+    Returns (x1, y1, x2, y2) clamped to the image. The margin gives Vision
+    surrounding context and survives slightly-off line bboxes.
+    """
+    x, y, w, h = bbox
+    mx = round(h * margin_ratio) + 4
+    my = round(h * margin_ratio) + 4
+    return (max(0, x - mx), max(0, y - my),
+            min(img_w, x + w + mx), min(img_h, y + h + my))
+
+
+def merge_retry(original: OcrLine, retried: list[OcrLine]) -> OcrLine:
+    """Adopt a re-OCR result only when it is genuinely more confident (pure).
+
+    The retried lines come from a tiny crop; join them in reading order and
+    compare mean confidence against the original. Bbox always stays the
+    original's (layout parsing depends on full-image coordinates).
+    """
+    texts = [l.text for l in retried if l.text.strip()]
+    if not texts:
+        return original
+    conf = sum(l.confidence for l in retried) / len(retried)
+    if conf <= original.confidence:
+        return original
+    return OcrLine(text=" ".join(texts), bbox=original.bbox, confidence=conf)
+
+
+def _retry_low_confidence(img, lines: list[OcrLine], cfg: OcrConfig,
+                          extra_words: tuple[str, ...]) -> list[OcrLine]:
+    """Second chance for weak lines: crop + upscale + re-recognize."""
+    import cv2
+
+    h, w = img.shape[:2]
+    out: list[OcrLine] = []
+    for line in lines:
+        if line.confidence >= cfg.retry_below:
+            out.append(line)
+            continue
+        x1, y1, x2, y2 = retry_crop_box(line.bbox, w, h)
+        crop = img[y1:y2, x1:x2]
+        if crop.size == 0:
+            out.append(line)
+            continue
+        crop = cv2.resize(crop, None, fx=cfg.retry_upscale, fy=cfg.retry_upscale,
+                          interpolation=cv2.INTER_CUBIC)
+        retried = _vision_pass(crop, cfg, extra_words)
+        out.append(merge_retry(line, retried))
+    return out
 
 
 # ---------------------------------------------------------------------------

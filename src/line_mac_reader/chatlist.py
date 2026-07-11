@@ -190,7 +190,7 @@ class ChatList:
         first line matching `name`, or None."""
         img = self.screen.capture(region)
         px_per_pt = self.screen.image_scale(img, region)
-        for line in ocr(img, self.cfg.ocr):
+        for line in ocr(img, self.cfg.ocr, extra_words=(name,)):
             if names_match(name, line.text):
                 cy = line.bbox[1] + line.bbox[3] / 2
                 return region.y + round(cy / px_per_pt)
@@ -204,7 +204,8 @@ class ChatList:
         """
         title_region = self.cfg.regions.chat_title.offset(
             self.window_rect.x, self.window_rect.y)
-        lines = ocr(self.screen.capture(title_region), self.cfg.ocr)
+        lines = ocr(self.screen.capture(title_region), self.cfg.ocr,
+                    extra_words=(name,))
         title = " ".join(l.text for l in lines).strip()
         if not title:
             log.warning("Could not OCR chat title; assuming %r opened", name)
