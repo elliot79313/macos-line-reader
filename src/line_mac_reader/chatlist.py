@@ -51,6 +51,14 @@ def find_badges(img, cfg: Config) -> list[tuple[int, int, int, int]]:
     return boxes
 
 
+def names_match(a: str, b: str) -> bool:
+    """Fuzzy chat-name comparison: whitespace-insensitive containment either
+    way, so OCR truncation (「王小明的旅遊…」) still matches."""
+    na = "".join(a.split()).lower()
+    nb = "".join(b.split()).lower()
+    return bool(na) and bool(nb) and (na in nb or nb in na)
+
+
 def _merge_rows(boxes: list[tuple[int, int, int, int]], row_height_px: int
                 ) -> list[tuple[int, int, int, int]]:
     """Collapse multiple badge fragments that fall within the same list row."""
@@ -164,14 +172,31 @@ class ChatList:
         pyautogui.hotkey("command", "v")
         time.sleep(self.cfg.timing.search_wait)
 
-        # Click the first search result (top row of the list area).
+        # Search results include section headers (好友/群組/聊天…), so the
+        # first row is NOT necessarily the chat. OCR the result list and
+        # click the line that matches the requested name.
         region = self.region_on_screen()
-        pyautogui.click(region.x + region.width // 2,
-                        region.y + self.cfg.regions.row_height // 2)
+        click_y = self._find_result_y(name, region)
+        if click_y is None:
+            log.warning("No OCR match for %r in search results; "
+                        "falling back to the first row", name)
+            click_y = region.y + self.cfg.regions.row_height // 2
+        pyautogui.click(region.x + region.width // 2, click_y)
         time.sleep(self.cfg.timing.chat_open_wait)
-        return self._title_matches(name)
+        return self.verify_open_chat(name)
 
-    def _title_matches(self, name: str) -> bool:
+    def _find_result_y(self, name: str, region: Rect) -> int | None:
+        """OCR the search-result list; return the logical screen y of the
+        first line matching `name`, or None."""
+        img = self.screen.capture(region)
+        px_per_pt = self.screen.image_scale(img, region)
+        for line in ocr(img, self.cfg.ocr):
+            if names_match(name, line.text):
+                cy = line.bbox[1] + line.bbox[3] / 2
+                return region.y + round(cy / px_per_pt)
+        return None
+
+    def verify_open_chat(self, name: str) -> bool:
         """OCR the open chat's title bar and fuzzily compare with `name`.
 
         Lenient on purpose: if the title can't be OCR'd at all we proceed
@@ -184,9 +209,7 @@ class ChatList:
         if not title:
             log.warning("Could not OCR chat title; assuming %r opened", name)
             return True
-        a = "".join(name.split()).lower()
-        b = "".join(title.split()).lower()
-        if a in b or b in a:
+        if names_match(name, title):
             return True
         log.error("Opened chat title %r does not match requested %r", title, name)
         return False

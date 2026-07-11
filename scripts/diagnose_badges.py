@@ -101,6 +101,11 @@ def main() -> int:
         top = max(0, cy - row_h // 2)
         cv2.rectangle(annotated, (0, top), (img.shape[1] - 1, top + row_h),
                       (255, 0, 0), 1)
+        # Crosshair at the exact point main.py would click for this row —
+        # if this cross is not on the right person, calibrate regions.
+        cx = img.shape[1] // 2
+        cv2.drawMarker(annotated, (cx, cy), (0, 255, 255),
+                       cv2.MARKER_CROSS, 40, 3)
     cv2.imwrite(str(out_dir / "annotated.png"), annotated)
 
     print(f"偵測到 {len(boxes)} 個未讀 badge。")

@@ -84,6 +84,15 @@ def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
     if chat.click_point is not None:
         pyautogui.click(*chat.click_point)
         time.sleep(cfg.timing.chat_open_wait)
+        # Guard against calibration drift: confirm we opened the row we
+        # meant to before reading anything. Skip when the row name itself
+        # was unreadable (nothing to compare against).
+        if (not chat.chat_name.startswith("<")
+                and not chat_list.verify_open_chat(chat.chat_name)):
+            raise RuntimeError(
+                f"點擊後開啟的對話標題與「{chat.chat_name}」不符，已跳過以免"
+                "讀錯人。多半是座標校正問題：請跑 scripts/diagnose_badges.py "
+                "確認 regions 區域框與點擊十字有對齊。")
     elif not chat_list.open_chat_by_search(chat.chat_name):
         raise RuntimeError(
             f"搜尋開啟對話失敗（開啟的標題與「{chat.chat_name}」不符）")

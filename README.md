@@ -57,7 +57,7 @@ python scripts/diagnose_badges.py --config config.yaml
 | `fullwindow.png` | 整個 LINE 視窗，畫出 `chat_list` / `messages` / `chat_title` 三個區域框 —— **先確認這三個框有對齊**，沒對齊就調 `config.yaml` 的 `regions` |
 | `chatlist.png` | 聊天清單區域原始截圖 |
 | `mask.png` | 未讀 badge 的 HSV 遮罩（白色 = 命中）|
-| `annotated.png` | 綠框 = 偵測到的 badge，藍框 = 推得的列範圍 |
+| `annotated.png` | 綠框 = 偵測到的 badge，藍框 = 推得的列範圍，**黃色十字 = 實際會點擊的位置**——十字沒落在正確的人身上就是座標要校正 |
 
 若 badge 沒被抓到，用 `--sample X,Y` 取 badge 的 HSV 值（座標對照 `chatlist.png` 的像素位置），再回填 `badge.hsv_lower` / `hsv_upper`：
 
@@ -92,10 +92,12 @@ line-mac-reader --reset                                  # 清空所有 last_rea
 | 模式 | 行為 | 注意事項 |
 |---|---|---|
 | （預設） | 只讀有未讀 badge 的對話 | badge 偵測需先校正 |
-| `--chat "名稱"` | 用 LINE 搜尋框搜尋並開啟該對話，**不管有無未讀**；可重複指定 | 名稱要能被 LINE 搜尋命中；透過剪貼簿貼上（會覆蓋剪貼簿內容）；開啟後會 OCR 標題欄比對，不符則跳過該對話並記錄錯誤。搜尋框位置在 `config.yaml` 的 `regions.search_box`，可用診斷腳本確認（粉紅框） |
+| `--chat "名稱"` | 用 LINE 搜尋框搜尋，OCR 搜尋結果找到**名稱相符的那一列**再點開，**不管有無未讀**；可重複指定 | 名稱要能被 LINE 搜尋命中；透過剪貼簿貼上（會覆蓋剪貼簿內容）。搜尋框位置在 `config.yaml` 的 `regions.search_box`，可用診斷腳本確認（粉紅框） |
 | `--all` | 讀取聊天清單**目前可見**的每一列 | 不會捲動清單本身；列高依 `regions.row_height` 切格，名稱 OCR 失敗的列會跳過 |
 
 三種模式讀完都會更新該對話的 `last_read`（`--dry-run` 除外），所以用 `--chat`/`--all` 讀過的對話，下次預設模式只會接著讀新訊息。
+
+**防讀錯人**：無論哪種模式，點開對話後都會先 OCR 標題欄與目標名稱做模糊比對（去空白、雙向包含），不符就跳過該對話並在 JSON 的 `error` 記錄原因，不會把別人的訊息讀進來。
 
 ### 輸出
 

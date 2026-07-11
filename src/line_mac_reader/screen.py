@@ -76,22 +76,22 @@ class Screen:
         import mss
         import numpy as np
 
-        phys = self.scaler.to_physical_rect(region)
         with mss.mss() as sct:
             raw = sct.grab({
                 # mss accepts logical coords on macOS and returns physical
-                # pixels; pass logical and verify the returned size.
+                # pixels; pass logical here, and let image_scale() derive the
+                # actual pixels-per-point from what came back.
                 "left": region.x, "top": region.y,
                 "width": region.width, "height": region.height,
             })
             img = np.asarray(raw)[:, :, :3]  # BGRA -> BGR
-        # Sanity check: if mss returned logical-sized pixels (non-Retina),
-        # phys equals region and this still passes.
-        if img.shape[1] not in (phys.width, region.width):
+        # Coordinate mapping downstream uses image_scale(), so fractional
+        # scaled-resolution displays still work — just flag oddities.
+        actual = img.shape[1] / region.width
+        if not 0.5 <= actual <= 4.0:
             raise RuntimeError(
-                f"Unexpected capture width {img.shape[1]} for region "
-                f"{region.width} (physical {phys.width}); "
-                "check display scaling configuration"
+                f"Capture width {img.shape[1]} for a {region.width}pt region "
+                f"(scale {actual:.2f}) — check display configuration"
             )
         return img
 
