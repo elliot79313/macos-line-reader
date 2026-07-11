@@ -35,6 +35,9 @@ def build_parser() -> argparse.ArgumentParser:
     scope.add_argument("--all", action="store_true", dest="all_chats",
                        help="Read every chat row currently visible in the "
                             "list, not just unread ones")
+    p.add_argument("--ignore-last-read", action="store_true",
+                   help="Read the full --fallback-hours window even when the "
+                        "chat has a last-read record")
     p.add_argument("--dry-run", action="store_true",
                    help="Read but do not update last-read state")
     p.add_argument("--reset", action="store_true",
@@ -63,12 +66,13 @@ def make_debug_saver(cfg: Config, run_stamp: str, enabled: bool):
 
 def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
                  state, now: datetime, fallback_hours: int,
-                 debug_save, chat_list) -> ChatResult:
+                 debug_save, chat_list, ignore_last_read: bool = False
+                 ) -> ChatResult:
     import pyautogui
 
     from .reader import ChatReader
 
-    last_read = state.get_last_read(chat.chat_key)
+    last_read = None if ignore_last_read else state.get_last_read(chat.chat_key)
     if last_read is not None:
         read_from, source = last_read, "last_read"
     else:
@@ -239,6 +243,7 @@ def main(argv: list[str] | None = None) -> int:
             results.append(process_chat(
                 chat, cfg, screen, window_rect, state, now,
                 fallback_hours, debug_save, chat_list,
+                ignore_last_read=args.ignore_last_read,
             ))
         except Exception as exc:  # noqa: BLE001 — per-chat fault isolation
             log.exception("Failed reading chat %r", chat.chat_name)

@@ -24,3 +24,11 @@ def test_default_is_unread_only():
     args = build_parser().parse_args([])
     assert args.chat is None
     assert not args.all_chats
+    assert not args.ignore_last_read
+
+
+def test_ignore_last_read_with_window():
+    args = build_parser().parse_args(
+        ["--chat", "王小明", "--fallback-hours", "120", "--ignore-last-read"])
+    assert args.fallback_hours == 120
+    assert args.ignore_last_read
