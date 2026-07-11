@@ -90,7 +90,7 @@ class LayoutConfig:
 class TimingConfig:
     app_launch_wait: float = 3.0
     chat_open_wait: float = 1.0
-    scroll_wait: float = 0.35   # LINE repaint wait between scroll and capture
+    scroll_wait: float = 0.3    # LINE repaint wait between scroll and capture
     click_wait: float = 0.3
     search_wait: float = 1.0    # after typing into the search box
     pyautogui_pause: float = 0.05  # pyautogui's built-in pause per action
@@ -98,10 +98,14 @@ class TimingConfig:
 
 @dataclass
 class ScrollConfig:
-    step: int = 12            # pyautogui scroll units per scroll-up
+    mode: str = "pixel"       # "pixel": native CGEvent, ~a page per step (fast)
+                              # "wheel": pyautogui wheel clicks (slow, fallback)
+    page_fraction: float = 0.75  # pixel mode: scroll this much of the region
+                                 # height per step; <1 keeps overlap for merging
+    step: int = 12            # wheel mode: pyautogui scroll units per step
     max_scrolls: int = 60     # hard stop per chat, safety net
     stall_limit: int = 3      # consecutive identical screens => top of chat
-    cutoff_check_every: int = 2  # OCR every Nth screen during capture to test cutoff
+    cutoff_check_every: int = 3  # OCR every Nth screen during capture to test cutoff
 
 
 @dataclass

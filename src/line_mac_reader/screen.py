@@ -85,15 +85,24 @@ class Screen:
                 "width": region.width, "height": region.height,
             })
             img = np.asarray(raw)[:, :, :3]  # BGRA -> BGR
-        # Coordinate mapping downstream uses image_scale(), so fractional
-        # scaled-resolution displays still work — just flag oddities.
-        actual = img.shape[1] / region.width
+        img = crop_padded_width(img, region)
+        actual = img.shape[0] / region.height
         if not 0.5 <= actual <= 4.0:
             raise RuntimeError(
-                f"Capture width {img.shape[1]} for a {region.width}pt region "
+                f"Capture height {img.shape[0]} for a {region.height}pt region "
                 f"(scale {actual:.2f}) — check display configuration"
             )
         return img
+
+    def image_scale(self, img, region: Rect) -> float:
+        """Actual pixels-per-point of a captured image.
+
+        Derived from HEIGHT: on macOS, mss pads the capture width to a
+        multiple of 16 px, so width-based ratios overestimate the scale and
+        every y->logical conversion lands too high (worse further down the
+        screen). Height is never padded.
+        """
+        return img.shape[0] / region.height
 
     def save_debug(self, img, path: str | Path) -> None:
         import cv2
@@ -101,6 +110,17 @@ class Screen:
         Path(path).parent.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(path), img)
 
-    def image_scale(self, img, region: Rect) -> float:
-        """Actual pixels-per-point of a captured image (1.0 or 2.0 typically)."""
-        return img.shape[1] / region.width
+
+def crop_padded_width(img, region: Rect):
+    """Trim the columns mss pads onto macOS captures.
+
+    mss rounds the capture width up to a multiple of 16 px, so the image can
+    contain extra screen content to the RIGHT of the requested region (e.g.
+    message bubbles leaking into a chat-list capture, producing phantom
+    badges). The pixels-per-point is taken from the height, which is exact.
+    """
+    scale = img.shape[0] / region.height
+    expected_w = round(region.width * scale)
+    if img.shape[1] > expected_w:
+        return img[:, :expected_w]
+    return img

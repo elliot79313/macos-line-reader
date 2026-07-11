@@ -76,13 +76,16 @@ layout:                     # whole-screen OCR -> bubble reconstruction
 timing:                     # seconds; raise these on slower machines
   app_launch_wait: 3.0
   chat_open_wait: 1.0
-  scroll_wait: 0.35         # 捲動後等 UI 重繪的時間（截圖模糊/缺訊息就調大）
+  scroll_wait: 0.3          # 捲動後等 UI 重繪的時間（截圖模糊/缺訊息就調大）
   click_wait: 0.3
   search_wait: 1.0          # after typing a query into the search box
   pyautogui_pause: 0.05     # pyautogui 每個動作的內建停頓
 
 scroll:
-  step: 12                  # scroll-wheel units per upward scroll
+  mode: pixel               # pixel = 原生像素捲動，一步捲大約一頁（快，推薦）
+                            # wheel = pyautogui 滾輪（慢，備援）
+  page_fraction: 0.75       # pixel 模式一步捲動「訊息區高度」的比例；<1 保留重疊供去重
+  step: 12                  # wheel 模式：每步滾輪格數
   max_scrolls: 60           # hard cap per chat
   stall_limit: 3            # identical consecutive screens => reached top
-  cutoff_check_every: 2     # 快速連拍時每 N 張做一次「是否已捲過 cutoff」檢查
+  cutoff_check_every: 3     # 快速連拍時每 N 張做一次「是否已捲過 cutoff」檢查

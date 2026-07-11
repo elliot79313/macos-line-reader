@@ -36,3 +36,44 @@ def test_rect_center_and_offset():
     assert r.center == (60, 45)
     moved = r.offset(5, -5)
     assert (moved.x, moved.y) == (15, 15)
+
+
+def test_crop_padded_width_removes_mss_padding():
+    """mss pads macOS captures to a 16px-multiple width; those columns are
+    real screen content RIGHT of the region and must be trimmed, otherwise
+    width-based scale maps clicks too high."""
+    import numpy as np
+
+    from line_mac_reader.screen import crop_padded_width
+
+    region = Rect(0, 0, 280, 690)  # 2x => 560x1380, mss pads width to 576
+    img = np.zeros((1380, 576, 3), dtype=np.uint8)
+    cropped = crop_padded_width(img, region)
+    assert cropped.shape[1] == 560
+    assert cropped.shape[0] == 1380
+
+
+def test_crop_padded_width_noop_when_exact():
+    import numpy as np
+
+    from line_mac_reader.screen import crop_padded_width
+
+    region = Rect(0, 0, 280, 690)
+    img = np.zeros((1380, 560, 3), dtype=np.uint8)
+    assert crop_padded_width(img, region).shape == (1380, 560, 3)
+
+
+def test_image_scale_uses_height_not_padded_width():
+    """Regression: with a padded 576px-wide capture of a 280pt region, the
+    old width-based scale was 576/280=2.057 and every y->logical conversion
+    landed too high. Height-based scale stays exactly 2.0."""
+    import numpy as np
+
+    from line_mac_reader.screen import Screen
+
+    region = Rect(0, 0, 280, 690)
+    img = np.zeros((1380, 576, 3), dtype=np.uint8)  # NOT cropped on purpose
+    screen = Screen(scaler=Scaler(scale=2.0))
+    assert screen.image_scale(img, region) == 2.0
+    # badge at physical y=1100 must map back to logical 550, not 535
+    assert round(1100 / screen.image_scale(img, region)) == 550

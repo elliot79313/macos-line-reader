@@ -292,6 +292,10 @@ class ChatReader:
         stalls = 0
         check_every = max(1, self.cfg.scroll.cutoff_check_every)
 
+        # Scroll events land at the cursor position; park it once instead of
+        # a moveTo (plus pyautogui pause) on every iteration.
+        pyautogui.moveTo(*region.center)
+
         for i in range(self.cfg.scroll.max_scrolls + 1):
             img = self.screen.capture(region)
             digest = hashlib.sha1(img.tobytes()).hexdigest()
@@ -313,8 +317,7 @@ class ChatReader:
                                  chat_name, len(screens))
                         break
             prev_hash = digest
-            pyautogui.moveTo(*region.center)
-            pyautogui.scroll(self.cfg.scroll.step)  # positive = scroll up
+            self._scroll_up(region)
             time.sleep(self.cfg.timing.scroll_wait)
 
         # --- phase 2: batch OCR + merge --------------------------------------
@@ -326,6 +329,28 @@ class ChatReader:
             transcript = merge_transcripts(items, transcript)
 
         return self._finalize(transcript, cutoff, today, chat_name)
+
+    def _scroll_up(self, region: Rect) -> None:
+        """One upward scroll step.
+
+        "pixel" mode posts a native pixel-unit scroll event covering
+        page_fraction of the region per step — an order of magnitude fewer
+        iterations than wheel clicks. "wheel" mode is the pyautogui fallback.
+        """
+        if self.cfg.scroll.mode == "pixel":
+            try:
+                import Quartz
+
+                dy = int(region.height * self.cfg.scroll.page_fraction)
+                ev = Quartz.CGEventCreateScrollWheelEvent(
+                    None, Quartz.kCGScrollEventUnitPixel, 1, dy)
+                Quartz.CGEventPost(Quartz.kCGHIDEventTap, ev)
+                return
+            except ImportError:
+                log.warning("Quartz unavailable; falling back to wheel scroll")
+        import pyautogui
+
+        pyautogui.scroll(self.cfg.scroll.step)  # positive = scroll up
 
     def parse_screen(self, img, chat_name: str, today: date) -> list[ParsedItem]:
         """One whole-image OCR pass, then layout reconstruction."""
