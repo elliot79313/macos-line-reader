@@ -78,7 +78,7 @@ def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
     (a misaligned --all row grid can land two clicks on the same chat)."""
     import pyautogui
 
-    from .chatlist import is_excluded, names_match
+    from .chatlist import fuzzy_dup, is_excluded, names_match
     from .line_controller import activate_line
     from .reader import ChatReader
 
@@ -106,11 +106,11 @@ def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
         chat_name = chat.chat_name  # explicit --chat: the user's name wins
 
     if processed is not None:
-        key = "".join(chat_name.split()).lower()
-        if key in processed:
+        # Fuzzy, not exact: the title OCRs slightly differently each open.
+        if fuzzy_dup(chat_name, processed):
             log.info("Skipping duplicate open of %r", chat_name)
             return None
-        processed.add(key)
+        processed.add("".join(chat_name.split()).lower())
 
     # Row-name OCR can be garbled, so the blocklist is re-checked against
     # the canonical title too (explicit --chat requests are never filtered).

@@ -64,6 +64,24 @@ def is_excluded(name: str, patterns: tuple[str, ...]) -> bool:
     return any(p and "".join(p.split()).lower() in n for p in patterns)
 
 
+def fuzzy_dup(name: str, seen, threshold: float = 0.7) -> bool:
+    """Is `name` an OCR variant of an already-processed chat name?
+
+    Titles OCR slightly differently on each open (「正光診所」/「止光診所」,
+    four spellings of "Legacy Taiwan里程…"), so duplicate detection uses
+    similarity, not equality. `seen` holds normalized names.
+
+    The threshold is deliberately conservative: merging two genuinely
+    different chats loses data, an occasional duplicate entry does not.
+    Heavily garbled titles (most characters misread) can still slip through
+    as duplicates — that is a title-OCR quality problem, not a dedup one.
+    """
+    from difflib import SequenceMatcher
+
+    n = "".join(name.split()).lower()
+    return any(SequenceMatcher(None, n, s).ratio() >= threshold for s in seen)
+
+
 def names_match(a: str, b: str) -> bool:
     """Fuzzy chat-name comparison: whitespace-insensitive containment either
     way, so OCR truncation (「王小明的旅遊…」) still matches."""

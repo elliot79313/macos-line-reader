@@ -43,6 +43,14 @@ def test_invalid_date_rejected():
     assert parse_date_separator("2026年13月40日", TODAY) is None
 
 
+def test_future_dates_are_not_separators():
+    """Promo-card text like 「7月29日開跑」 must not become a separator."""
+    assert parse_date_separator("2026年7月29日", TODAY) is None
+    assert parse_date_separator("2026/07/29", TODAY) is None
+    # month-day without a year still rolls back to the previous year
+    assert parse_date_separator("7月29日", TODAY) == date(2025, 7, 29)
+
+
 def test_time_24h():
     assert parse_time_of_day("14:05") == (14, 5)
     assert parse_time_of_day("好的 14:05") == (14, 5)

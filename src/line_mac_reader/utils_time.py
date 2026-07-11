@@ -49,15 +49,19 @@ def parse_date_separator(text: str, today: date) -> date | None:
     m = _RE_CJK_FULL.search(cleaned)
     if m:
         try:
-            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         except ValueError:
             return None
+        # A transcript separator can never be in the future — a future date
+        # is promo text (「7月29日開跑！」) misread as a separator.
+        return d if d <= today else None
     m = _RE_YMD.search(cleaned)
     if m:
         try:
-            return date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
+            d = date(int(m.group(1)), int(m.group(2)), int(m.group(3)))
         except ValueError:
             return None
+        return d if d <= today else None
     m = _RE_CJK_MD.search(cleaned)
     if m:
         try:
