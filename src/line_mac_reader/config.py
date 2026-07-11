@@ -112,6 +112,34 @@ class ScrollConfig:
 
 
 @dataclass
+class SlackConfig:
+    webhook_url: str | None = None  # Slack Incoming Webhook
+    max_messages_per_chat: int = 30  # digest truncates long chats past this
+
+
+@dataclass
+class FiltersConfig:
+    """Chats to skip in unread/--all scans (NOT in explicit --chat).
+
+    Substring match, whitespace/case-insensitive — one entry like 「官方」
+    covers every official-account name containing it.
+    """
+
+    exclude_chats: tuple[str, ...] = ()
+
+
+@dataclass
+class DigestConfig:
+    """Morning-digest shaping: messages containing any of these keywords are
+    surfaced as action-item candidates at the top of each chat section."""
+
+    action_keywords: tuple[str, ...] = (
+        "請", "麻煩", "記得", "需要", "確認", "回覆", "報價",
+        "合約", "簽", "截止", "付款", "會議", "約",
+    )
+
+
+@dataclass
 class Config:
     timezone: str = "Asia/Taipei"
     fallback_hours: int = 48
@@ -125,6 +153,9 @@ class Config:
     layout: LayoutConfig = field(default_factory=LayoutConfig)
     timing: TimingConfig = field(default_factory=TimingConfig)
     scroll: ScrollConfig = field(default_factory=ScrollConfig)
+    slack: SlackConfig = field(default_factory=SlackConfig)
+    filters: FiltersConfig = field(default_factory=FiltersConfig)
+    digest: DigestConfig = field(default_factory=DigestConfig)
 
 
 def _rect_from(d: dict[str, Any]) -> Rect:
@@ -164,7 +195,9 @@ def load_config(path: str | Path | None) -> Config:
             if name in b:
                 setattr(cfg.badge, name, b[name])
     for section, obj in (("ocr", cfg.ocr), ("layout", cfg.layout),
-                         ("timing", cfg.timing), ("scroll", cfg.scroll)):
+                         ("timing", cfg.timing), ("scroll", cfg.scroll),
+                         ("slack", cfg.slack), ("filters", cfg.filters),
+                         ("digest", cfg.digest)):
         if section in data:
             for k, v in data[section].items():
                 if hasattr(obj, k):

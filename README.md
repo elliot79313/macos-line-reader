@@ -145,6 +145,45 @@ line-mac-reader --reset                                  # 清空所有 last_rea
 
 每個對話成功讀完後，`state.sqlite3` 會把該對話的 `last_read_at` 更新為本次 `run_at`；下次執行只讀這之後的訊息。`--dry-run` 不更新、`--reset` 清空。狀態鍵是 **OCR 到的對話名稱**（風險見下）。
 
+## 每日自動摘要到 Slack（客戶討論 → 隔天早上待辦提點）
+
+工作流：每天早上排程自動執行 → 讀取所有未讀對話（官方帳號黑名單先剔除）→ 存 JSON（`output/` 就是完整存檔）→ 把摘要推到 Slack Incoming Webhook，含「待辦候選」置頂區（訊息含「請/合約/報價/確認…」等關鍵字者，關鍵字在 config 可調）。
+
+### 設定步驟
+
+1. **config.yaml** 填 webhook 與黑名單：
+
+```yaml
+slack:
+  webhook_url: https://hooks.slack.com/services/T000/B000/XXXX
+filters:
+  exclude_chats: [官方帳號, 客服, LINE Pay]   # 名稱含這些字串的對話一律跳過
+```
+
+2. **手動測一次**（`--slack-webhook` 也可直接帶 URL 蓋過 config）：
+
+```bash
+line-mac-reader --config config.yaml --slack
+```
+
+3. **裝排程**（launchd，macOS 原生）：
+
+```bash
+# 編輯 launchd/com.linemacreader.daily.plist：
+#   把 /Users/YOURNAME/macos-line-reader 換成實際路徑、調整執行時間（預設 08:30）
+cp launchd/com.linemacreader.daily.plist ~/Library/LaunchAgents/
+launchctl load ~/Library/LaunchAgents/com.linemacreader.daily.plist
+launchctl start com.linemacreader.daily     # 立即手動觸發測試
+```
+
+### 排程的前提（重要）
+
+- 觸發當下 Mac 必須**醒著、已登入解鎖**，LINE 已登入——建議把時間設在你固定在電腦前的時段；執行的一兩分鐘內 LINE 會被帶到前景，勿操作滑鼠鍵盤。
+- 第一次由 launchd 觸發時，macOS 可能對 venv 裡的 Python 重新跳「螢幕錄製／輔助使用」權限視窗，允許一次即可。
+- 每天讀取範圍自動銜接：狀態庫記錄每個對話的上次讀取時間，隔天只讀新訊息。
+- 執行紀錄在專案目錄的 `launchd.out.log` / `launchd.err.log`。
+- 摘要（含訊息內容）會送到你的 Slack workspace——webhook URL 等同這個頻道的投遞權限，請妥善保管，也留意客戶對話內容進 Slack 是否符合你與客戶的保密約定。
+
 ## 運作原理（模組導覽）
 
 ```

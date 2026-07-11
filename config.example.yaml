@@ -86,6 +86,20 @@ timing:                     # seconds; raise these on slower machines
   search_wait: 1.0          # after typing a query into the search box
   pyautogui_pause: 0.05     # pyautogui 每個動作的內建停頓
 
+# ---- 每日 Slack 摘要（--slack）----
+slack:
+  webhook_url: null         # Slack Incoming Webhook，例：
+                            # https://hooks.slack.com/services/T000/B000/XXXX
+  max_messages_per_chat: 30 # 摘要中每個對話最多列幾則（超過的看 output JSON）
+
+filters:
+  exclude_chats: []         # 未讀掃描/--all 要跳過的對話（子字串比對，不分大小寫）
+                            # 例：exclude_chats: [官方帳號, 客服, LINE Pay, 電信, 銀行]
+                            # 注意：--chat 明確指定的對話不受此黑名單影響
+
+digest:                     # 訊息含任一關鍵字就列入「待辦候選」置頂區
+  action_keywords: [請, 麻煩, 記得, 需要, 確認, 回覆, 報價, 合約, 簽, 截止, 付款, 會議, 約]
+
 scroll:
   mode: pixel               # pixel = 原生像素捲動，一步捲大約一頁（快，推薦）
                             # wheel = pyautogui 滾輪（慢，備援）

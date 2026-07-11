@@ -51,6 +51,13 @@ def find_badges(img, cfg: Config) -> list[tuple[int, int, int, int]]:
     return boxes
 
 
+def is_excluded(name: str, patterns: tuple[str, ...]) -> bool:
+    """Blocklist check for unread/--all scans (whitespace/case-insensitive
+    substring), used to skip business/official accounts."""
+    n = "".join(name.split()).lower()
+    return any(p and "".join(p.split()).lower() in n for p in patterns)
+
+
 def names_match(a: str, b: str) -> bool:
     """Fuzzy chat-name comparison: whitespace-insensitive containment either
     way, so OCR truncation (「王小明的旅遊…」) still matches."""

@@ -46,6 +46,12 @@ def build_parser() -> argparse.ArgumentParser:
                    help="Output directory (default from config: output/)")
     p.add_argument("--debug", action="store_true",
                    help="Save step-by-step screenshots and raw OCR to debug/")
+    p.add_argument("--slack", action="store_true",
+                   help="Send the digest to the Slack Incoming Webhook from "
+                        "config (slack.webhook_url)")
+    p.add_argument("--slack-webhook", default=None, metavar="URL",
+                   help="Slack Incoming Webhook URL (implies --slack, "
+                        "overrides config)")
     return p
 
 
@@ -223,15 +229,25 @@ def main(argv: list[str] | None = None) -> int:
              window_rect, screen.scaler.scale)
 
     # --- decide which chats to read ------------------------------------------
+    from .chatlist import is_excluded
+
     chat_list = ChatList(cfg, screen, window_rect)
     if args.chat:
-        # Explicit chats, opened via the search box — unread state irrelevant.
+        # Explicit chats, opened via the search box — unread state irrelevant,
+        # and the exclude blocklist does not apply to an explicit request.
         chats = [UnreadChat(chat_name=n, row_index=i, click_point=None)
                  for i, n in enumerate(args.chat)]
-    elif args.all_chats:
-        chats = chat_list.scan_visible_rows(debug_save=debug_save)
     else:
-        chats = chat_list.scan_unread(debug_save=debug_save)
+        if args.all_chats:
+            chats = chat_list.scan_visible_rows(debug_save=debug_save)
+        else:
+            chats = chat_list.scan_unread(debug_save=debug_save)
+        excluded = [c for c in chats
+                    if is_excluded(c.chat_name, cfg.filters.exclude_chats)]
+        if excluded:
+            log.info("Excluded by filters.exclude_chats: %s",
+                     ", ".join(c.chat_name for c in excluded))
+            chats = [c for c in chats if c not in excluded]
     if args.only and not args.chat:
         chats = [c for c in chats if args.only in c.chat_name]
         log.info("--only %r matched %d chat(s)", args.only, len(chats))
@@ -273,6 +289,25 @@ def main(argv: list[str] | None = None) -> int:
     print(f"\nJSON 已輸出：{out_path}")
     if args.dry_run:
         print("(dry-run：未更新 last_read 狀態)")
+
+    # --- Slack digest ---------------------------------------------------------
+    if args.slack or args.slack_webhook:
+        from .notify import send_digest
+
+        webhook = args.slack_webhook or cfg.slack.webhook_url
+        if not webhook:
+            print("錯誤：未設定 Slack webhook——請在 config.yaml 填 "
+                  "slack.webhook_url，或用 --slack-webhook URL。",
+                  file=sys.stderr)
+            return 1
+        try:
+            n = send_digest(webhook, results, now,
+                            cfg.digest.action_keywords,
+                            cfg.slack.max_messages_per_chat)
+            print("Slack 摘要已送出。" if n else "沒有新訊息，未送 Slack。")
+        except RuntimeError as exc:
+            print(f"錯誤：{exc}", file=sys.stderr)
+            return 1
     return 0
 
 
