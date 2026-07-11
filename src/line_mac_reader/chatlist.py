@@ -9,6 +9,8 @@ scripts/diagnose_badges.py before first use.
 from __future__ import annotations
 
 import logging
+import subprocess
+import time
 
 from .config import Config
 from .models import Rect, UnreadChat
@@ -109,6 +111,85 @@ class ChatList:
                 name_ocr_confidence=conf,
             ))
         return chats
+
+    def scan_visible_rows(self, debug_save=None) -> list[UnreadChat]:
+        """Enumerate ALL rows currently visible in the chat list (--all mode).
+
+        Rows are taken on a fixed grid of regions.row_height; rows whose name
+        OCR comes back empty are skipped. The list itself is not scrolled.
+        """
+        region = self.region_on_screen()
+        img = self.screen.capture(region)
+        px_per_pt = self.screen.image_scale(img, region)
+        row_h_px = int(self.cfg.regions.row_height * px_per_pt)
+
+        chats: list[UnreadChat] = []
+        for idx in range(img.shape[0] // row_h_px):
+            top = idx * row_h_px
+            row = img[top:top + row_h_px, :]
+            # Cut before the right-hand column (HH:MM + badge) so it doesn't
+            # pollute the name.
+            name, conf = self._ocr_row_name(
+                row, exclude_from_x=int(row.shape[1] * 0.72))
+            if debug_save is not None:
+                debug_save(f"allrow_{idx}_{name or 'empty'}", row)
+            if not name:
+                continue
+            chats.append(UnreadChat(
+                chat_name=name,
+                row_index=idx,
+                click_point=(
+                    region.x + region.width // 2,
+                    region.y + round((top + row_h_px // 2) / px_per_pt),
+                ),
+                name_ocr_confidence=conf,
+            ))
+        log.info("Enumerated %d visible chat row(s)", len(chats))
+        return chats
+
+    def open_chat_by_search(self, name: str) -> bool:
+        """Open a chat via LINE's search box (--chat mode); works regardless
+        of unread state. Returns False if the opened chat's title doesn't
+        match `name` (so the caller can avoid reading the wrong chat)."""
+        import pyautogui
+
+        sb = self.cfg.regions.search_box.offset(
+            self.window_rect.x, self.window_rect.y)
+        pyautogui.click(*sb.center)
+        time.sleep(self.cfg.timing.click_wait)
+        # Clear any previous query, then paste (typewrite can't produce CJK).
+        pyautogui.hotkey("command", "a")
+        pyautogui.press("backspace")
+        subprocess.run(["pbcopy"], input=name.encode("utf-8"), check=True)
+        pyautogui.hotkey("command", "v")
+        time.sleep(self.cfg.timing.search_wait)
+
+        # Click the first search result (top row of the list area).
+        region = self.region_on_screen()
+        pyautogui.click(region.x + region.width // 2,
+                        region.y + self.cfg.regions.row_height // 2)
+        time.sleep(self.cfg.timing.chat_open_wait)
+        return self._title_matches(name)
+
+    def _title_matches(self, name: str) -> bool:
+        """OCR the open chat's title bar and fuzzily compare with `name`.
+
+        Lenient on purpose: if the title can't be OCR'd at all we proceed
+        with a warning rather than fail (title fonts OCR poorly at times).
+        """
+        title_region = self.cfg.regions.chat_title.offset(
+            self.window_rect.x, self.window_rect.y)
+        lines = ocr(self.screen.capture(title_region), self.cfg.ocr)
+        title = " ".join(l.text for l in lines).strip()
+        if not title:
+            log.warning("Could not OCR chat title; assuming %r opened", name)
+            return True
+        a = "".join(name.split()).lower()
+        b = "".join(title.split()).lower()
+        if a in b or b in a:
+            return True
+        log.error("Opened chat title %r does not match requested %r", title, name)
+        return False
 
     def _ocr_row_name(self, row_img, exclude_from_x: int) -> tuple[str, float]:
         """OCR a chat-list row crop; the name is the top-most text line.

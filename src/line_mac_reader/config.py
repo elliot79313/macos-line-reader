@@ -38,6 +38,7 @@ class RegionsConfig:
     chat_list: Rect = field(default_factory=lambda: Rect(70, 90, 280, 690))
     messages: Rect = field(default_factory=lambda: Rect(360, 90, 730, 620))
     chat_title: Rect = field(default_factory=lambda: Rect(360, 30, 500, 50))
+    search_box: Rect = field(default_factory=lambda: Rect(80, 52, 250, 30))
     row_height: int = 68  # approximate chat-list row height
 
 
@@ -74,6 +75,7 @@ class TimingConfig:
     chat_open_wait: float = 1.2
     scroll_wait: float = 0.7
     click_wait: float = 0.4
+    search_wait: float = 1.0  # after typing into the search box
 
 
 @dataclass
@@ -121,7 +123,7 @@ def load_config(path: str | Path | None) -> Config:
             setattr(cfg.window, k, v)
     if "regions" in data:
         r = data["regions"]
-        for name in ("chat_list", "messages", "chat_title"):
+        for name in ("chat_list", "messages", "chat_title", "search_box"):
             if name in r:
                 setattr(cfg.regions, name, _rect_from(r[name]))
         if "row_height" in r:

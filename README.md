@@ -67,6 +67,11 @@ python scripts/diagnose_badges.py --config config.yaml --sample 250,120
 # 標準執行：掃描所有未讀對話並輸出
 line-mac-reader --config config.yaml
 
+# 讀取「任何」對話（不限未讀）
+line-mac-reader --config config.yaml --chat "王小明"              # 用 LINE 搜尋框開啟指定對話並讀取
+line-mac-reader --config config.yaml --chat "王小明" --chat "家人群"  # 可重複指定多個
+line-mac-reader --config config.yaml --all                       # 讀取清單目前「可見」的每一列
+
 # 常用旗標
 line-mac-reader --config config.yaml --only "王小明"     # 只處理名稱含關鍵字的對話（測試用）
 line-mac-reader --config config.yaml --dry-run          # 讀取但不更新 last_read 狀態
@@ -77,6 +82,16 @@ line-mac-reader --reset                                  # 清空所有 last_rea
 ```
 
 執行期間 **LINE 視窗必須維持在前景、不可被遮擋、不要動滑鼠鍵盤**。
+
+### 三種讀取範圍
+
+| 模式 | 行為 | 注意事項 |
+|---|---|---|
+| （預設） | 只讀有未讀 badge 的對話 | badge 偵測需先校正 |
+| `--chat "名稱"` | 用 LINE 搜尋框搜尋並開啟該對話，**不管有無未讀**；可重複指定 | 名稱要能被 LINE 搜尋命中；透過剪貼簿貼上（會覆蓋剪貼簿內容）；開啟後會 OCR 標題欄比對，不符則跳過該對話並記錄錯誤。搜尋框位置在 `config.yaml` 的 `regions.search_box`，可用診斷腳本確認（粉紅框） |
+| `--all` | 讀取聊天清單**目前可見**的每一列 | 不會捲動清單本身；列高依 `regions.row_height` 切格，名稱 OCR 失敗的列會跳過 |
+
+三種模式讀完都會更新該對話的 `last_read`（`--dry-run` 除外），所以用 `--chat`/`--all` 讀過的對話，下次預設模式只會接著讀新訊息。
 
 ### 輸出
 
@@ -147,7 +162,7 @@ src/line_mac_reader/
 5. OCR 對表情符號、特殊排版、彩色背景氣泡可能誤判；`chi_tra` 對小字體敏感，前處理參數（`ocr.upscale`、`psm`）可在 config 調整。
 6. 群組訊息的**發送者辨識為啟發式**（取氣泡上方的短行），可能誤把訊息首行當人名。
 7. 需要系統層級權限；執行時 LINE 視窗必須前景、不可遮擋，期間請勿使用滑鼠鍵盤。
-8. 未讀對話**須出現在聊天清單可視範圍內**（LINE 預設未讀排前面，一般沒問題）；本版不捲動清單本身。
+8. 未讀對話**須出現在聊天清單可視範圍內**（LINE 預設未讀排前面，一般沒問題）；本版不捲動清單本身。清單外的對話請改用 `--chat "名稱"` 以搜尋開啟。
 
 ## 開發
 

@@ -35,6 +35,11 @@ regions:
     y: 30
     width: 500
     height: 50
+  search_box:               # the sidebar search field (used by --chat)
+    x: 80
+    y: 52
+    width: 250
+    height: 30
   row_height: 68            # approximate height of one chat-list row
 
 # Unread badge detection: HSV color mask + contour filtering.
@@ -63,6 +68,7 @@ timing:                     # seconds; raise these on slower machines
   chat_open_wait: 1.2
   scroll_wait: 0.7
   click_wait: 0.4
+  search_wait: 1.0          # after typing a query into the search box
 
 scroll:
   step: 12                  # scroll-wheel units per upward scroll

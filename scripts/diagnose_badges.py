@@ -66,6 +66,7 @@ def main() -> int:
         ("chat_list", cfg.regions.chat_list, (0, 0, 255)),
         ("messages", cfg.regions.messages, (255, 0, 0)),
         ("chat_title", cfg.regions.chat_title, (0, 255, 255)),
+        ("search_box", cfg.regions.search_box, (255, 0, 255)),
     ):
         p1 = (int(region.x * ppp), int(region.y * ppp))
         p2 = (int((region.x + region.width) * ppp),

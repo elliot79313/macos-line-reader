@@ -25,11 +25,16 @@ class Rect:
 
 @dataclass
 class UnreadChat:
-    """A chat-list row detected as having unread messages."""
+    """A chat to open and read.
+
+    Usually a chat-list row detected as unread, but also used for --all
+    (every visible row) and --chat (opened via LINE's search box, in which
+    case click_point is None).
+    """
 
     chat_name: str
     row_index: int
-    click_point: tuple[int, int]  # logical screen coordinates
+    click_point: tuple[int, int] | None  # logical screen coords; None = open via search
     badge_bbox: tuple[int, int, int, int] | None = None  # x, y, w, h (logical)
     name_ocr_confidence: float = 0.0
 

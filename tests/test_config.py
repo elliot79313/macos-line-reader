@@ -10,6 +10,8 @@ def test_defaults():
     assert cfg.fallback_hours == 48
     assert cfg.ocr.lang == "chi_tra+jpn+eng"
     assert isinstance(cfg.regions.chat_list, Rect)
+    assert isinstance(cfg.regions.search_box, Rect)
+    assert cfg.timing.search_wait == 1.0
 
 
 def test_missing_file_raises(tmp_path):

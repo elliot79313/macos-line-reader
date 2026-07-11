@@ -28,6 +28,13 @@ def build_parser() -> argparse.ArgumentParser:
                         "(default from config: 48)")
     p.add_argument("--only", default=None,
                    help="Only process chats whose name contains this substring")
+    scope = p.add_mutually_exclusive_group()
+    scope.add_argument("--chat", action="append", metavar="NAME",
+                       help="Open this chat via LINE's search box and read it, "
+                            "unread or not. Repeatable: --chat A --chat B")
+    scope.add_argument("--all", action="store_true", dest="all_chats",
+                       help="Read every chat row currently visible in the "
+                            "list, not just unread ones")
     p.add_argument("--dry-run", action="store_true",
                    help="Read but do not update last-read state")
     p.add_argument("--reset", action="store_true",
@@ -56,7 +63,7 @@ def make_debug_saver(cfg: Config, run_stamp: str, enabled: bool):
 
 def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
                  state, now: datetime, fallback_hours: int,
-                 debug_save) -> ChatResult:
+                 debug_save, chat_list) -> ChatResult:
     import pyautogui
 
     from .reader import ChatReader
@@ -74,8 +81,12 @@ def process_chat(chat: UnreadChat, cfg: Config, screen, window_rect,
         read_from_source=source,
         read_to=now,
     )
-    pyautogui.click(*chat.click_point)
-    time.sleep(cfg.timing.chat_open_wait)
+    if chat.click_point is not None:
+        pyautogui.click(*chat.click_point)
+        time.sleep(cfg.timing.chat_open_wait)
+    elif not chat_list.open_chat_by_search(chat.chat_name):
+        raise RuntimeError(
+            f"搜尋開啟對話失敗（開啟的標題與「{chat.chat_name}」不符）")
 
     reader = ChatReader(cfg, screen, window_rect, debug_save=debug_save)
     result.messages = reader.read_chat(chat.chat_name, cutoff=read_from)
@@ -191,9 +202,17 @@ def main(argv: list[str] | None = None) -> int:
     log.info("LINE window at %s, display scale %.1f",
              window_rect, screen.scaler.scale)
 
-    # --- scan unread chats --------------------------------------------------
-    chats = ChatList(cfg, screen, window_rect).scan_unread(debug_save=debug_save)
-    if args.only:
+    # --- decide which chats to read ------------------------------------------
+    chat_list = ChatList(cfg, screen, window_rect)
+    if args.chat:
+        # Explicit chats, opened via the search box — unread state irrelevant.
+        chats = [UnreadChat(chat_name=n, row_index=i, click_point=None)
+                 for i, n in enumerate(args.chat)]
+    elif args.all_chats:
+        chats = chat_list.scan_visible_rows(debug_save=debug_save)
+    else:
+        chats = chat_list.scan_unread(debug_save=debug_save)
+    if args.only and not args.chat:
         chats = [c for c in chats if args.only in c.chat_name]
         log.info("--only %r matched %d chat(s)", args.only, len(chats))
 
@@ -203,7 +222,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             results.append(process_chat(
                 chat, cfg, screen, window_rect, state, now,
-                fallback_hours, debug_save,
+                fallback_hours, debug_save, chat_list,
             ))
         except Exception as exc:  # noqa: BLE001 — per-chat fault isolation
             log.exception("Failed reading chat %r", chat.chat_name)
