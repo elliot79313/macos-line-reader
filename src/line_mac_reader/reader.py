@@ -1,12 +1,23 @@
-"""Read one open chat: scroll up, screenshot, OCR, rebuild timestamps, dedup.
+"""Read one open chat: fast capture scroll, then batch OCR + layout parsing.
 
-Flow (SOW §6.4):
-1. The chat opens at the bottom (newest). Determine the cutoff time.
-2. Capture the messages region, segment it into per-bubble blocks, OCR each.
-3. Scroll up and repeat until a message older than cutoff appears, the top of
-   the chat is reached (screen stops changing), or max_scrolls hits.
-4. Merge overlapping captures by message keys, resolve HH:MM against date
-   separators (top-to-bottom), and return messages oldest-first.
+Two phases (v2 — replaces the OCR-inside-the-scroll-loop design):
+
+1. CAPTURE: scroll up quickly, saving raw screenshots. No OCR between
+   scrolls except a cheap cutoff probe every Nth screen, so scrolling runs
+   at UI-repaint speed. Stops at the cutoff probe, when the screen stops
+   changing (top of chat), or at max_scrolls.
+2. PARSE: OCR each captured screen ONCE (whole image — Vision returns every
+   text line with its bounding box), then reconstruct the transcript from
+   layout:
+     - "已讀" read-receipts are dropped
+     - standalone 「上午/下午 H:MM」/「HH:MM」 lines become time labels,
+       attached to the vertically nearest bubble
+     - short centered lines that parse as dates (「昨天」「今天」「2026年7月1日」)
+       become date separators
+     - remaining lines group into bubbles by side (left/incoming vs
+       right/outgoing) and vertical gaps
+   Overlapping captures merge by message keys; timestamps resolve
+   top-to-bottom against the date-separator context.
 """
 
 from __future__ import annotations
@@ -15,10 +26,11 @@ import hashlib
 import logging
 import re
 import time
-from dataclasses import dataclass
-from datetime import datetime
+from dataclasses import dataclass, field
+from datetime import date, datetime
+from statistics import median
 
-from .config import Config
+from .config import Config, LayoutConfig
 from .models import Message, Rect
 from .ocr import OcrLine, ocr
 from .screen import Screen
@@ -27,9 +39,13 @@ from .utils_time import DateContext, parse_date_separator, parse_time_of_day, tz
 log = logging.getLogger(__name__)
 
 ME = "me"
+_RE_TIME_ONLY = re.compile(
+    r"(?:(?:上午|下午|午前|午後)\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?"
+)
 _RE_TRAILING_TIME = re.compile(
     r"\s*(?:(?:上午|下午|午前|午後)\s*)?\d{1,2}:\d{2}(?:\s*(?:AM|PM|am|pm))?\s*$"
 )
+_READ_RECEIPTS = {"已讀", "已读", "既読", "Read"}
 _KIND_MARKERS = {
     "貼圖": "sticker",
     "照片": "image",
@@ -42,9 +58,9 @@ _KIND_MARKERS = {
 
 @dataclass
 class ParsedItem:
-    """One transcript row: either a date separator or a message candidate."""
+    """One transcript row: either a date separator or a message."""
 
-    kind: str  # "separator" | "message" | "media"
+    kind: str  # "separator" | "message"
     text: str
     sender: str = ""
     time_of_day: tuple[int, int] | None = None
@@ -56,123 +72,156 @@ class ParsedItem:
         return f"{self.kind}|{self.sender}|{' '.join(self.text.split())}"
 
 
-# --------------------------------------------------------------------------
-# Segmentation (pure numpy — unit-testable)
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Layout parsing (pure functions — unit-testable with synthetic OcrLines)
+# ---------------------------------------------------------------------------
 
-def row_activity(gray, background_tolerance: int = 18):
-    """Boolean per-row mask: does this pixel row contain non-background content?"""
-    import numpy as np
-
-    bg = np.median(gray)
-    diff = np.abs(gray.astype(np.int16) - int(bg)) > background_tolerance
-    return diff.mean(axis=1) > 0.01
+@dataclass
+class _TimeLabel:
+    tod: tuple[int, int]
+    y_center: float
 
 
-def segment_bands(active, min_gap: int = 8, min_height: int = 10
-                  ) -> list[tuple[int, int]]:
-    """Split a row-activity mask into (top, bottom) content bands.
+@dataclass
+class _Bubble:
+    side: str  # "left" | "right"
+    lines: list[OcrLine] = field(default_factory=list)
 
-    Gaps shorter than min_gap merge adjacent bands (lines within one bubble);
-    bands shorter than min_height are dropped as noise.
-    """
-    bands: list[tuple[int, int]] = []
-    start = None
-    last_active = -1
-    gap = 0
-    for i, a in enumerate(active):
-        if a:
-            if start is None:
-                start = i
-            last_active = i
-            gap = 0
-        elif start is not None:
-            gap += 1
-            if gap >= min_gap:
-                end = last_active + 1
-                if end - start >= min_height:
-                    bands.append((start, end))
-                start, gap = None, 0
-    if start is not None:
-        end = last_active + 1
-        if end - start >= min_height:
-            bands.append((start, end))
-    return bands
+    @property
+    def top(self) -> int:
+        return min(l.bbox[1] for l in self.lines)
+
+    @property
+    def bottom(self) -> int:
+        return max(l.bbox[1] + l.bbox[3] for l in self.lines)
 
 
-def block_side(gray_block, background_tolerance: int = 18) -> str:
-    """'left' (incoming) or 'right' (outgoing) by horizontal center of mass."""
-    import numpy as np
+def _strip_receipt(text: str) -> str:
+    t = text.strip()
+    for r in _READ_RECEIPTS:
+        if t == r:
+            return ""
+        if t.startswith(r + " ") or t.startswith(r):
+            candidate = t[len(r):].strip()
+            # Only strip when what remains is a bare time label
+            # (Vision sometimes merges 「已讀」 with the adjacent time).
+            if not candidate or _RE_TIME_ONLY.fullmatch(candidate):
+                return candidate
+    return t
 
-    bg = np.median(gray_block)
-    mask = np.abs(gray_block.astype(np.int16) - int(bg)) > background_tolerance
-    cols = mask.mean(axis=0)
-    total = cols.sum()
-    if total == 0:
-        return "left"
-    centroid = (cols * np.arange(len(cols))).sum() / total
-    return "right" if centroid > len(cols) * 0.55 else "left"
+
+def _is_separator(line: OcrLine, width: int, today: date, cfg: LayoutConfig) -> bool:
+    text = line.text.strip()
+    if len(text) > cfg.separator_max_chars:
+        return False
+    if parse_date_separator(text, today) is None:
+        return False
+    lo, hi = cfg.separator_center_band
+    center = (line.bbox[0] + line.bbox[2] / 2) / width
+    return lo <= center <= hi
 
 
-# --------------------------------------------------------------------------
-# Parsing one captured screen
-# --------------------------------------------------------------------------
+def parse_layout(lines: list[OcrLine], width: int, chat_name: str,
+                 today: date, cfg: LayoutConfig, px_per_pt: float = 1.0
+                 ) -> list[ParsedItem]:
+    """Reconstruct transcript items from one whole-screen OCR result."""
+    gap_px = cfg.bubble_gap * px_per_pt
+    separators: list[ParsedItem] = []
+    time_labels: list[_TimeLabel] = []
+    text_lines: list[OcrLine] = []
 
-def parse_block(lines: list[OcrLine], side: str, chat_name: str,
-                today, block_top: int) -> ParsedItem | None:
-    """Turn the OCR lines of one segmented block into a ParsedItem."""
-    if not lines:
-        return None
-    joined = " ".join(l.text for l in lines).strip()
-    if not joined:
-        return None
-
-    # Date separator: a single short centered line that parses as a date.
-    if len(lines) <= 2 and parse_date_separator(joined, today) is not None:
-        return ParsedItem(kind="separator", text=joined, y=block_top,
-                          ocr_confidence=_avg_conf(lines))
-
-    time_of_day = None
-    text_lines: list[str] = []
-    sender = ME if side == "right" else chat_name
-    for i, line in enumerate(lines):
-        t = line.text.strip()
-        tod = parse_time_of_day(t)
-        if tod and _RE_TRAILING_TIME.fullmatch(t):
-            time_of_day = time_of_day or tod  # standalone time label
+    for raw in sorted(lines, key=lambda l: (l.bbox[1], l.bbox[0])):
+        text = _strip_receipt(raw.text)
+        if not text:
             continue
-        if tod and _RE_TRAILING_TIME.search(t):
-            time_of_day = time_of_day or tod
-            t = _RE_TRAILING_TIME.sub("", t).strip()
-        # Group-chat heuristic: a short first line on an incoming bubble with
-        # more lines below is likely the sender's display name.
-        if i == 0 and side == "left" and len(lines) > 1 and 0 < len(t) <= 24 \
-                and not parse_time_of_day(t) and t not in _KIND_MARKERS:
-            sender = t
+        if _RE_TIME_ONLY.fullmatch(text):
+            tod = parse_time_of_day(text)
+            if tod:
+                time_labels.append(_TimeLabel(tod, raw.bbox[1] + raw.bbox[3] / 2))
             continue
+        if _is_separator(raw, width, today, cfg):
+            separators.append(ParsedItem(
+                kind="separator", text=text, y=raw.bbox[1],
+                ocr_confidence=raw.confidence))
+            continue
+        text_lines.append(OcrLine(text, raw.bbox, raw.confidence))
+
+    # Group text lines into bubbles by side + vertical adjacency.
+    bubbles: list[_Bubble] = []
+    for line in text_lines:
+        side = "left" if line.bbox[0] < cfg.side_ratio * width else "right"
+        if (bubbles and bubbles[-1].side == side
+                and line.bbox[1] - bubbles[-1].bottom <= gap_px):
+            bubbles[-1].lines.append(line)
+        else:
+            bubbles.append(_Bubble(side=side, lines=[line]))
+
+    items = separators + [
+        _bubble_to_item(b, chat_name, time_labels, gap_px) for b in bubbles
+    ]
+    items = [i for i in items if i is not None]
+    items.sort(key=lambda i: i.y)
+    return items
+
+
+def _bubble_to_item(bubble: _Bubble, chat_name: str,
+                    time_labels: list[_TimeLabel], gap_px: float
+                    ) -> ParsedItem | None:
+    sender = ME if bubble.side == "right" else chat_name
+    lines = bubble.lines
+    time_of_day: tuple[int, int] | None = None
+
+    # Group-chat sender heuristic: the sender label above an incoming bubble
+    # renders in a smaller font — only reassign when the first line is both
+    # short AND noticeably smaller than the rest (avoids eating a real first
+    # line like 「早安」 in direct chats).
+    if bubble.side == "left" and len(lines) >= 2:
+        first, rest = lines[0], lines[1:]
+        rest_h = median(l.bbox[3] for l in rest)
+        if (0 < len(first.text) <= 24 and first.bbox[3] < 0.85 * rest_h
+                and first.text not in _KIND_MARKERS):
+            sender = first.text
+            lines = rest
+
+    texts: list[str] = []
+    for line in lines:
+        t = line.text
+        m = _RE_TRAILING_TIME.search(t)
+        if m and len(t) > len(m.group(0).strip()):
+            tod = parse_time_of_day(m.group(0))
+            if tod:
+                time_of_day = time_of_day or tod
+                t = _RE_TRAILING_TIME.sub("", t).strip()
         if t:
-            text_lines.append(t)
-
-    text = "\n".join(text_lines).strip()
-    if not text and time_of_day is None:
+            texts.append(t)
+    if not texts:
         return None
+
+    # Attach the vertically nearest standalone time label.
+    if time_of_day is None:
+        best, best_dist = None, gap_px * 2
+        for label in time_labels:
+            if bubble.top - gap_px <= label.y_center <= bubble.bottom + gap_px:
+                dist = abs(label.y_center - bubble.bottom)
+                if dist < best_dist:
+                    best, best_dist = label, dist
+        if best is not None:
+            time_of_day = best.tod
+
+    text = "\n".join(texts).strip()
     marker = text.replace("[", "").replace("]", "").strip()
     if marker in _KIND_MARKERS:
         text = f"[{marker}]"
-    elif not text:
-        text = "[無文字內容]"
-    return ParsedItem(kind="message", text=text, sender=sender,
-                      time_of_day=time_of_day, y=block_top,
-                      ocr_confidence=_avg_conf(lines))
+    return ParsedItem(
+        kind="message", text=text, sender=sender, time_of_day=time_of_day,
+        y=bubble.top,
+        ocr_confidence=sum(l.confidence for l in bubble.lines) / len(bubble.lines),
+    )
 
 
-def _avg_conf(lines: list[OcrLine]) -> float:
-    return sum(l.confidence for l in lines) / len(lines) if lines else 0.0
-
-
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 # Merging overlapping captures
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 def merge_transcripts(upper: list[ParsedItem], lower: list[ParsedItem]
                       ) -> list[ParsedItem]:
@@ -185,9 +234,37 @@ def merge_transcripts(upper: list[ParsedItem], lower: list[ParsedItem]
     return upper + lower
 
 
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Cutoff detection
+# ---------------------------------------------------------------------------
+
+def items_reach_cutoff(items: list[ParsedItem], cutoff: datetime,
+                       tz, today: date) -> bool:
+    """True when this (partial) transcript already extends past the cutoff.
+
+    Two triggers, walking top-to-bottom:
+    - a date separator at/before the cutoff's date: everything above it is
+      from an even earlier day, so capture can stop;
+    - a message whose resolved timestamp is <= cutoff.
+    """
+    ctx = DateContext(tz, today)
+    for item in items:
+        if item.kind == "separator":
+            d = parse_date_separator(item.text, today)
+            if d is not None and d <= cutoff.date():
+                return True
+            ctx.feed_separator(item.text)
+            continue
+        if item.time_of_day and ctx.current is not None:
+            ts, _ = ctx.resolve(*item.time_of_day)
+            if ts <= cutoff:
+                return True
+    return False
+
+
+# ---------------------------------------------------------------------------
 # The reader
-# --------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
 
 class ChatReader:
     def __init__(self, cfg: Config, screen: Screen, window_rect: Rect,
@@ -207,15 +284,16 @@ class ChatReader:
 
         region = self._messages_region()
         today = datetime.now(self.tz).date()
-        transcript: list[ParsedItem] = []
+
+        # --- phase 1: fast capture ------------------------------------------
+        screens: list = []
+        parsed_cache: dict[int, list[ParsedItem]] = {}
         prev_hash: str | None = None
         stalls = 0
+        check_every = max(1, self.cfg.scroll.cutoff_check_every)
 
-        for scroll_i in range(self.cfg.scroll.max_scrolls + 1):
+        for i in range(self.cfg.scroll.max_scrolls + 1):
             img = self.screen.capture(region)
-            if self.debug_save:
-                self.debug_save(f"{chat_name}_scroll{scroll_i}", img)
-
             digest = hashlib.sha1(img.tobytes()).hexdigest()
             if digest == prev_hash:
                 stalls += 1
@@ -224,60 +302,40 @@ class ChatReader:
                     break
             else:
                 stalls = 0
+                screens.append(img)
+                if self.debug_save:
+                    self.debug_save(f"{chat_name}_scroll{len(screens) - 1}", img)
+                if (len(screens) - 1) % check_every == 0:
+                    idx = len(screens) - 1
+                    parsed_cache[idx] = self.parse_screen(img, chat_name, today)
+                    if items_reach_cutoff(parsed_cache[idx], cutoff, self.tz, today):
+                        log.info("[%s] cutoff visible after %d screen(s)",
+                                 chat_name, len(screens))
+                        break
             prev_hash = digest
-
-            items = self.parse_screen(img, chat_name, today)
-            transcript = merge_transcripts(items, transcript)
-
-            if self._reached_cutoff(transcript, cutoff, today):
-                log.info("[%s] reached cutoff after %d scroll(s)", chat_name, scroll_i)
-                break
-
             pyautogui.moveTo(*region.center)
             pyautogui.scroll(self.cfg.scroll.step)  # positive = scroll up
             time.sleep(self.cfg.timing.scroll_wait)
 
+        # --- phase 2: batch OCR + merge --------------------------------------
+        transcript: list[ParsedItem] = []
+        for idx, img in enumerate(screens):
+            items = parsed_cache.get(idx)
+            if items is None:
+                items = self.parse_screen(img, chat_name, today)
+            transcript = merge_transcripts(items, transcript)
+
         return self._finalize(transcript, cutoff, today, chat_name)
 
-    def parse_screen(self, img, chat_name: str, today) -> list[ParsedItem]:
-        """Segment a messages-region capture into blocks and parse each."""
-        import cv2
-
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    def parse_screen(self, img, chat_name: str, today: date) -> list[ParsedItem]:
+        """One whole-image OCR pass, then layout reconstruction."""
+        lines = ocr(img, self.cfg.ocr)
         px_per_pt = self.screen.image_scale(img, self._messages_region())
-        active = row_activity(gray)
-        bands = segment_bands(
-            active,
-            min_gap=int(8 * px_per_pt),
-            min_height=int(10 * px_per_pt),
-        )
-
-        items: list[ParsedItem] = []
-        for top, bottom in bands:
-            block = img[top:bottom, :]
-            side = block_side(gray[top:bottom, :])
-            lines = ocr(block, self.cfg.ocr)
-            item = parse_block(lines, side, chat_name, today, block_top=top)
-            if item:
-                items.append(item)
-        return items
-
-    def _reached_cutoff(self, transcript: list[ParsedItem], cutoff: datetime,
-                        today) -> bool:
-        """True once the transcript's earliest dated message is at/before cutoff."""
-        ctx = DateContext(self.tz, today)
-        for item in transcript:
-            if item.kind == "separator":
-                ctx.feed_separator(item.text)
-                continue
-            if item.time_of_day and ctx.current is not None:
-                ts, _ = ctx.resolve(*item.time_of_day)
-                return ts <= cutoff
-            return False  # earliest visible message not confidently dated yet
-        return False
+        return parse_layout(lines, img.shape[1], chat_name, today,
+                            self.cfg.layout, px_per_pt=px_per_pt)
 
     def _finalize(self, transcript: list[ParsedItem], cutoff: datetime,
-                  today, chat_name: str) -> list[Message]:
+                  today: date, chat_name: str) -> list[Message]:
         """Resolve timestamps top-to-bottom and keep messages after cutoff.
 
         Cutoff comparison is lenient: messages whose timestamp could not be
@@ -308,7 +366,7 @@ class ChatReader:
                 text=item.text,
                 timestamp_est=ts,
                 timestamp_confidence=confidence,
-                kind=item.kind if item.kind != "message" else _kind_of(item.text),
+                kind=_kind_of(item.text),
                 ocr_confidence=round(item.ocr_confidence, 3),
             )
             k = (msg.sender, msg.text, ts.isoformat() if ts else None)
@@ -321,4 +379,4 @@ class ChatReader:
 
 def _kind_of(text: str) -> str:
     stripped = text.strip("[]").strip()
-    return _KIND_MARKERS.get(stripped, "text" if text != "[無文字內容]" else "unknown")
+    return _KIND_MARKERS.get(stripped, "text")

@@ -169,13 +169,13 @@ def main(argv: list[str] | None = None) -> int:
         return 0
 
     # --- environment self-checks ------------------------------------------
-    from .ocr import check_tesseract
+    from .ocr import check_engine
     from .permissions import check_permissions
 
     problems = check_permissions()
-    tess_err = check_tesseract(cfg.ocr)
-    if tess_err:
-        problems.append(tess_err)
+    ocr_err = check_engine(cfg.ocr)
+    if ocr_err:
+        problems.append(ocr_err)
     if problems:
         for p in problems:
             print(f"錯誤：{p}\n", file=sys.stderr)
@@ -191,6 +191,13 @@ def main(argv: list[str] | None = None) -> int:
     now = datetime.now(tz)
     run_stamp = now.strftime("%Y%m%d_%H%M%S")
     debug_save = make_debug_saver(cfg, run_stamp, args.debug)
+
+    try:
+        import pyautogui
+
+        pyautogui.PAUSE = cfg.timing.pyautogui_pause
+    except ImportError:
+        pass
 
     try:
         window_rect = LineController(cfg).launch_and_focus()

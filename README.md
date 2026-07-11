@@ -1,6 +1,6 @@
 # line-mac-reader
 
-讀取 macOS 桌機版 LINE 未讀訊息的 CLI 工具：以 **UI 自動化（模擬點擊＋螢幕截圖）＋ OCR（Tesseract）** 掃描聊天清單中的未讀對話，讀取「上次讀取時間 → 現在」（無紀錄則近 48 小時）之間的訊息，輸出 JSON 檔與主控台摘要。
+讀取 macOS 桌機版 LINE 未讀訊息的 CLI 工具：以 **UI 自動化（模擬點擊＋螢幕截圖）＋ OCR（預設 Apple Vision）** 掃描聊天清單中的未讀對話，讀取「上次讀取時間 → 現在」（無紀錄則近 48 小時）之間的訊息，輸出 JSON 檔與主控台摘要。
 
 > **重要**：LINE 官方沒有可讀取個人聊天內容的 API。本工具本質上是「看畫面、認文字」，屬於**脆弱型自動化**——LINE 改版（版面、字體、badge 顏色）就可能失效，屆時需以診斷腳本重新校正 `config.yaml`。所有座標、色彩門檻、等待時間都集中在 config，程式碼不寫死。
 >
@@ -16,16 +16,20 @@
 ## 安裝
 
 ```bash
-# 1. OCR 引擎與語言資料（繁中/日文/英文）
-brew install tesseract tesseract-lang
-
-# 2. Python 相依
+# 1. Python 相依（含 Apple Vision 的 pyobjc binding）
 python3 -m venv .venv && source .venv/bin/activate
 pip install -e .          # 或 pip install -r requirements.txt
 
-# 3. 建立自己的設定檔
+# 2. 建立自己的設定檔
 cp config.example.yaml config.yaml
+
+# （可選）備援 OCR 引擎 Tesseract——只有 config 設 ocr.engine: tesseract 才需要
+brew install tesseract tesseract-lang
 ```
+
+### OCR 引擎
+
+預設使用 **Apple Vision framework**（macOS 內建的 `VNRecognizeTextRequest`）：繁中辨識準確度遠高於 Tesseract、速度快、免安裝任何引擎，且直接回傳每行文字的座標，訊息版面（左右氣泡、時間、日期分隔列）都由座標重建。Tesseract 保留為備援（`ocr.engine: tesseract`）。
 
 ## 系統權限（必要，缺一不可）
 
@@ -142,8 +146,8 @@ src/line_mac_reader/
 ├─ line_controller.py  # open -a LINE、帶前景、固定視窗位置與大小
 ├─ screen.py           # mss 截圖；Retina 座標換算集中於 Scaler（有單元測試）
 ├─ chatlist.py         # 未讀 badge HSV 色彩遮罩＋輪廓偵測 → 列座標 → OCR 對話名稱
-├─ reader.py           # 開啟的對話：截圖→氣泡切塊→OCR→時間戳重建→向上捲動→去重
-├─ ocr.py              # Tesseract 統一介面（前處理：放大 2.5x、灰階、Otsu 二值化）
+├─ reader.py           # 開啟的對話：快速連拍捲動→批次整圖 OCR→版面重建→時間戳→去重
+├─ ocr.py              # OCR 統一介面：Apple Vision（預設）/ Tesseract（備援）
 ├─ state.py            # SQLite：chat_key → last_read_at
 ├─ models.py           # dataclass：Rect / UnreadChat / Message / ChatResult
 └─ utils_time.py       # 日期分隔列解析、HH:MM 補全、Asia/Taipei 時區
@@ -151,7 +155,9 @@ src/line_mac_reader/
 
 **Retina 注意**：`mss` 截圖是實體像素、`pyautogui` 點擊用邏輯座標（Retina 下差 2 倍）。所有換算集中在 `screen.Scaler`，其他模組一律不得自行乘除比例。
 
-**時間戳重建**：LINE 每則訊息只顯示 `HH:MM`（含上午/下午格式），日期來自畫面中的日期分隔列（「2026年7月1日」「昨天」「今天」等）。捲動時由上而下維護「目前日期上下文」把 `HH:MM` 補成完整時間；無法確定日期者標 `timestamp_confidence: low`。cutoff 比對刻意從寬——寧可多讀也不漏，重疊由去重（發送者＋文字內容＋概略位置）處理。
+**兩階段讀取（速度關鍵）**：讀對話時先**快速連拍**——捲動與截圖之間只等 UI 重繪（`timing.scroll_wait`，預設 0.35s），期間不做 OCR，只每 `scroll.cutoff_check_every` 張抽查一次「是否已捲過 cutoff」；捲完後再對每張截圖做**一次整圖 OCR**，用回傳的文字座標重建版面（左緣位置分左右氣泡、垂直間距切氣泡、置中短行判日期分隔列、「已讀」標籤剔除、獨立的「上午/下午 H:MM」行依垂直距離掛回氣泡）。
+
+**時間戳重建**：LINE 每則訊息只顯示 `HH:MM`（含上午/下午格式），日期來自畫面中的日期分隔列（「2026年7月1日」「昨天」「今天」等）。由上而下維護「目前日期上下文」把 `HH:MM` 補成完整時間；無法確定日期者標 `timestamp_confidence: low`。cutoff 比對刻意從寬——寧可多讀也不漏，重疊由去重（發送者＋文字內容）處理。
 
 ## 已知限制與風險
 
@@ -159,8 +165,8 @@ src/line_mac_reader/
 2. 只讀得到**畫面上顯示**的內容：貼圖／圖片／影片只能標成 `[貼圖]`/`[圖片]` 占位（且偵測是 best-effort），被摺疊的訊息拿不到。
 3. **時間戳為推估值**：跨日、跨年、系統語系非繁中都可能影響解析；`low` 信心的時間請自行斟酌。
 4. **對話名稱作為狀態鍵**：名稱重複或過長被截斷時，last_read 紀錄可能互相覆蓋。
-5. OCR 對表情符號、特殊排版、彩色背景氣泡可能誤判；`chi_tra` 對小字體敏感，前處理參數（`ocr.upscale`、`psm`）可在 config 調整。
-6. 群組訊息的**發送者辨識為啟發式**（取氣泡上方的短行），可能誤把訊息首行當人名。
+5. OCR 對表情符號、特殊排版可能誤判；純貼圖/圖片訊息（畫面上沒有任何文字）OCR 不到會**整則漏掉**。版面判斷的門檻（`layout.side_ratio`、`bubble_gap` 等）可在 config 調整。
+6. 群組訊息的**發送者辨識為啟發式**（氣泡上方字級較小的短行才視為人名），仍可能誤判。
 7. 需要系統層級權限；執行時 LINE 視窗必須前景、不可遮擋，期間請勿使用滑鼠鍵盤。
 8. 未讀對話**須出現在聊天清單可視範圍內**（LINE 預設未讀排前面，一般沒問題）；本版不捲動清單本身。清單外的對話請改用 `--chat "名稱"` 以搜尋開啟。
 

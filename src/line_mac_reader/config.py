@@ -60,29 +60,48 @@ class BadgeConfig:
 
 @dataclass
 class OcrConfig:
+    engine: str = "vision"  # "vision" (Apple Vision, recommended) | "tesseract"
+    vision_languages: tuple[str, ...] = ("zh-Hant", "ja", "en")
+    min_confidence: float = 0.5  # below this, messages are flagged for review
+    # tesseract-only parameters:
     lang: str = "chi_tra+jpn+eng"
     psm: int = 6
     upscale: float = 2.5
     binarize: bool = True
     invert_dark_background: bool = True
-    min_confidence: float = 0.5  # below this, messages are flagged for review
     tesseract_cmd: str | None = None  # override tesseract binary path
+
+
+@dataclass
+class LayoutConfig:
+    """Thresholds for parsing a whole-screen OCR result into bubbles.
+
+    Values calibrated against LINE desktop dark mode; all ratios are relative
+    to the messages-region width, gaps in logical px.
+    """
+
+    side_ratio: float = 0.40       # line left-edge < this*width => incoming
+    bubble_gap: int = 18           # vertical gap larger than this splits bubbles
+    separator_max_chars: int = 14  # date separators are short
+    separator_center_band: tuple[float, float] = (0.25, 0.75)
 
 
 @dataclass
 class TimingConfig:
     app_launch_wait: float = 3.0
-    chat_open_wait: float = 1.2
-    scroll_wait: float = 0.7
-    click_wait: float = 0.4
-    search_wait: float = 1.0  # after typing into the search box
+    chat_open_wait: float = 1.0
+    scroll_wait: float = 0.35   # LINE repaint wait between scroll and capture
+    click_wait: float = 0.3
+    search_wait: float = 1.0    # after typing into the search box
+    pyautogui_pause: float = 0.05  # pyautogui's built-in pause per action
 
 
 @dataclass
 class ScrollConfig:
-    step: int = 12           # pyautogui scroll units per scroll-up
-    max_scrolls: int = 60    # hard stop per chat, safety net
-    stall_limit: int = 3     # consecutive identical screens => top of chat
+    step: int = 12            # pyautogui scroll units per scroll-up
+    max_scrolls: int = 60     # hard stop per chat, safety net
+    stall_limit: int = 3      # consecutive identical screens => top of chat
+    cutoff_check_every: int = 2  # OCR every Nth screen during capture to test cutoff
 
 
 @dataclass
@@ -96,6 +115,7 @@ class Config:
     regions: RegionsConfig = field(default_factory=RegionsConfig)
     badge: BadgeConfig = field(default_factory=BadgeConfig)
     ocr: OcrConfig = field(default_factory=OcrConfig)
+    layout: LayoutConfig = field(default_factory=LayoutConfig)
     timing: TimingConfig = field(default_factory=TimingConfig)
     scroll: ScrollConfig = field(default_factory=ScrollConfig)
 
@@ -136,9 +156,10 @@ def load_config(path: str | Path | None) -> Config:
         for name in ("min_area", "max_area", "min_aspect", "max_aspect"):
             if name in b:
                 setattr(cfg.badge, name, b[name])
-    for section, obj in (("ocr", cfg.ocr), ("timing", cfg.timing), ("scroll", cfg.scroll)):
+    for section, obj in (("ocr", cfg.ocr), ("layout", cfg.layout),
+                         ("timing", cfg.timing), ("scroll", cfg.scroll)):
         if section in data:
             for k, v in data[section].items():
                 if hasattr(obj, k):
-                    setattr(obj, k, v)
+                    setattr(obj, k, tuple(v) if isinstance(v, list) else v)
     return cfg

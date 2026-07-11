@@ -1,9 +1,16 @@
 """OCR facade: image in -> [(text, bbox, confidence), ...] out.
 
-Engine: Tesseract via pytesseract (langs chi_tra+jpn+eng). Preprocessing and
-psm/lang live in OcrConfig so the engine can be swapped without touching
-callers. Chat bubbles must be cropped to single blocks BEFORE calling ocr()
-— feeding a whole screen produces cross-bubble garbage for chi_tra.
+Two engines behind one interface:
+- "vision" (default): Apple's Vision framework (VNRecognizeTextRequest).
+  Far more accurate on Traditional Chinese chat text than Tesseract, fast,
+  on-device, and needs no preprocessing — it returns per-line text with
+  bounding boxes, so the reader can parse layout from a single whole-screen
+  pass.
+- "tesseract": kept as a fallback. Needs upscale/Otsu preprocessing and
+  works best on small cropped blocks.
+
+Engine choice and all parameters live in OcrConfig; callers never know which
+engine ran.
 """
 
 from __future__ import annotations
@@ -19,6 +26,83 @@ class OcrLine:
     bbox: tuple[int, int, int, int]  # x, y, w, h in the INPUT image's pixels
     confidence: float  # 0.0 - 1.0
 
+
+def ocr(img, cfg: OcrConfig) -> list[OcrLine]:
+    """Run OCR on an image (BGR or grayscale numpy array).
+
+    Returns one OcrLine per text line, bboxes in the input image's pixels,
+    confidence normalized to 0-1, sorted top-to-bottom.
+    """
+    if cfg.engine == "vision":
+        return _ocr_vision(img, cfg)
+    return _ocr_tesseract(img, cfg)
+
+
+def check_engine(cfg: OcrConfig) -> str | None:
+    """Return an error message if the configured OCR engine is unusable."""
+    if cfg.engine == "vision":
+        try:
+            import Vision  # noqa: F401
+        except ImportError:
+            return ("ocr.engine=vision 需要 pyobjc-framework-Vision："
+                    "pip install pyobjc-framework-Vision，"
+                    "或在 config 將 ocr.engine 改為 tesseract。")
+        return None
+    if cfg.engine == "tesseract":
+        return check_tesseract(cfg)
+    return f"未知的 ocr.engine: {cfg.engine!r}（可用：vision | tesseract）"
+
+
+# ---------------------------------------------------------------------------
+# Apple Vision engine
+# ---------------------------------------------------------------------------
+
+def _ocr_vision(img, cfg: OcrConfig) -> list[OcrLine]:
+    import cv2
+    import Vision
+    from Foundation import NSData
+
+    ok, buf = cv2.imencode(".png", img)
+    if not ok:
+        raise RuntimeError("could not encode image for Vision OCR")
+    data = NSData.dataWithBytes_length_(buf.tobytes(), len(buf))
+    handler = Vision.VNImageRequestHandler.alloc().initWithData_options_(data, None)
+
+    request = Vision.VNRecognizeTextRequest.alloc().init()
+    request.setRecognitionLevel_(Vision.VNRequestTextRecognitionLevelAccurate)
+    request.setUsesLanguageCorrection_(True)
+    request.setRecognitionLanguages_(list(cfg.vision_languages))
+
+    success, error = handler.performRequests_error_([request], None)
+    if not success:
+        raise RuntimeError(f"Vision OCR failed: {error}")
+
+    h, w = img.shape[:2]
+    lines: list[OcrLine] = []
+    for obs in request.results() or []:
+        candidates = obs.topCandidates_(1)
+        if not candidates:
+            continue
+        cand = candidates[0]
+        text = str(cand.string()).strip()
+        if not text:
+            continue
+        bb = obs.boundingBox()  # normalized, origin at BOTTOM-left
+        x = bb.origin.x * w
+        y = (1.0 - bb.origin.y - bb.size.height) * h
+        lines.append(OcrLine(
+            text=text,
+            bbox=(round(x), round(y),
+                  round(bb.size.width * w), round(bb.size.height * h)),
+            confidence=float(cand.confidence()),
+        ))
+    lines.sort(key=lambda l: (l.bbox[1], l.bbox[0]))
+    return lines
+
+
+# ---------------------------------------------------------------------------
+# Tesseract engine (fallback)
+# ---------------------------------------------------------------------------
 
 def preprocess(img, cfg: OcrConfig):
     """Upscale + grayscale + (optional) Otsu binarization.
@@ -41,12 +125,7 @@ def preprocess(img, cfg: OcrConfig):
     return gray, scale
 
 
-def ocr(img, cfg: OcrConfig) -> list[OcrLine]:
-    """Run OCR on an image (BGR or grayscale numpy array).
-
-    Returns one OcrLine per text line, with bboxes in the ORIGINAL image's
-    pixel coordinates and confidence normalized to 0-1.
-    """
+def _ocr_tesseract(img, cfg: OcrConfig) -> list[OcrLine]:
     import pytesseract
 
     if cfg.tesseract_cmd:

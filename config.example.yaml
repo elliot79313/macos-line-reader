@@ -55,22 +55,34 @@ badge:
   max_aspect: 3.0
 
 ocr:
+  engine: vision            # vision = Apple Vision framework（推薦，繁中準確度高、速度快）
+                            # tesseract = 備援（需 brew install tesseract tesseract-lang）
+  vision_languages: [zh-Hant, ja, en]
+  min_confidence: 0.5       # messages below this get flagged in output
+  # ---- tesseract-only（engine: tesseract 時才生效）----
   lang: chi_tra+jpn+eng
   psm: 6                    # single uniform block; try 7 for single lines
   upscale: 2.5              # 2-3x upscaling markedly improves chi_tra accuracy
   binarize: true            # Otsu threshold after grayscale
   invert_dark_background: true
-  min_confidence: 0.5       # messages below this get flagged in output
   tesseract_cmd: null       # e.g. /opt/homebrew/bin/tesseract
+
+layout:                     # whole-screen OCR -> bubble reconstruction
+  side_ratio: 0.40          # 行左緣 < 寬度*此比例 => 對方訊息（左側氣泡）
+  bubble_gap: 18            # 垂直間距（邏輯 px）大於此值切成不同氣泡
+  separator_max_chars: 14   # 日期分隔列的最大字數
+  separator_center_band: [0.25, 0.75]  # 日期分隔列必須落在畫面中間帶
 
 timing:                     # seconds; raise these on slower machines
   app_launch_wait: 3.0
-  chat_open_wait: 1.2
-  scroll_wait: 0.7
-  click_wait: 0.4
+  chat_open_wait: 1.0
+  scroll_wait: 0.35         # 捲動後等 UI 重繪的時間（截圖模糊/缺訊息就調大）
+  click_wait: 0.3
   search_wait: 1.0          # after typing a query into the search box
+  pyautogui_pause: 0.05     # pyautogui 每個動作的內建停頓
 
 scroll:
   step: 12                  # scroll-wheel units per upward scroll
   max_scrolls: 60           # hard cap per chat
   stall_limit: 3            # identical consecutive screens => reached top
+  cutoff_check_every: 2     # 快速連拍時每 N 張做一次「是否已捲過 cutoff」檢查
