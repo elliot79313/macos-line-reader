@@ -56,6 +56,8 @@ badge:
   max_area: 2500
   min_aspect: 0.6
   max_aspect: 3.0
+  min_x_ratio: 0.6          # badge 一定在列的右側；左側的綠色色塊是頭像上的
+                            # logo（ALLinAI 的 Q、LINE禮物的禮物盒），一律忽略
 
 ocr:
   engine: vision            # vision = Apple Vision framework（推薦，繁中準確度高、速度快）

@@ -59,6 +59,9 @@ class BadgeConfig:
     max_area: int = 2500    # physical px^2, reject large green UI elements
     min_aspect: float = 0.6  # w/h of badge contour bounding box
     max_aspect: float = 3.0
+    # Unread badges sit at the RIGHT edge of a row; green blobs further left
+    # are avatar logos (ALLinAI's Q, LINE禮物's gift box) — never badges.
+    min_x_ratio: float = 0.6
 
 
 @dataclass
@@ -197,7 +200,8 @@ def load_config(path: str | Path | None) -> Config:
         for name in ("hsv_lower", "hsv_upper"):
             if name in b:
                 setattr(cfg.badge, name, tuple(int(x) for x in b[name]))
-        for name in ("min_area", "max_area", "min_aspect", "max_aspect"):
+        for name in ("min_area", "max_area", "min_aspect", "max_aspect",
+                     "min_x_ratio"):
             if name in b:
                 setattr(cfg.badge, name, b[name])
     for section, obj in (("ocr", cfg.ocr), ("layout", cfg.layout),

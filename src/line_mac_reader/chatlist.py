@@ -37,6 +37,7 @@ def find_badges(img, cfg: Config) -> list[tuple[int, int, int, int]]:
     mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((3, 3), np.uint8))
     contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
 
+    min_x = cfg.badge.min_x_ratio * img.shape[1]
     boxes: list[tuple[int, int, int, int]] = []
     for c in contours:
         x, y, w, h = cv2.boundingRect(c)
@@ -46,6 +47,8 @@ def find_badges(img, cfg: Config) -> list[tuple[int, int, int, int]]:
         aspect = w / h if h else 0
         if not (cfg.badge.min_aspect <= aspect <= cfg.badge.max_aspect):
             continue
+        if x + w / 2 < min_x:
+            continue  # green avatar logo on the left, not an unread badge
         boxes.append((x, y, w, h))
     boxes.sort(key=lambda b: b[1])
     return boxes
