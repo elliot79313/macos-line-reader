@@ -2,7 +2,12 @@ from datetime import datetime
 
 from line_mac_reader.config import LlmConfig
 from line_mac_reader.models import ChatResult, Message
-from line_mac_reader.summarize import build_messages, chat_to_text, strip_reasoning
+from line_mac_reader.summarize import (
+    build_messages,
+    chat_to_text,
+    iter_stream_content,
+    strip_reasoning,
+)
 from line_mac_reader.utils_time import tzinfo_for
 
 TZ = tzinfo_for("Asia/Taipei")
@@ -58,3 +63,21 @@ def test_strip_reasoning_removes_think_block():
     raw = "<think>讓我想想這些訊息…</think>1. *今日待辦*：回簽合約"
     assert strip_reasoning(raw) == "1. *今日待辦*：回簽合約"
     assert strip_reasoning("沒有思考塊") == "沒有思考塊"
+
+
+def test_iter_stream_content_assembles_deltas():
+    lines = [
+        'data: {"choices":[{"delta":{"content":"今日"}}]}',
+        'data: {"choices":[{"delta":{"content":"待辦"}}]}',
+        "",  # SSE blank separator lines are ignored
+        'data: {"choices":[{"delta":{"content":"：回簽"}}]}',
+        "data: [DONE]",
+        'data: {"choices":[{"delta":{"content":"不該出現"}}]}',
+    ]
+    assert "".join(iter_stream_content(lines)) == "今日待辦：回簽"
+
+
+def test_iter_stream_content_skips_malformed_lines():
+    lines = ["garbage", 'data: {bad json', 'data: {"choices":[{"delta":{}}]}',
+             'data: {"choices":[{"delta":{"content":"OK"}}]}']
+    assert "".join(iter_stream_content(lines)) == "OK"

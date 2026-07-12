@@ -50,31 +50,58 @@ def strip_reasoning(text: str) -> str:
     return _RE_THINK.sub("", text).strip()
 
 
+def iter_stream_content(resp):
+    """Yield content pieces from an OpenAI-style SSE stream (pure generator,
+    testable with any line-iterable)."""
+    for raw in resp:
+        line = raw.decode("utf-8").strip() if isinstance(raw, bytes) else raw.strip()
+        if not line or not line.startswith("data:"):
+            continue
+        data = line[len("data:"):].strip()
+        if data == "[DONE]":
+            break
+        try:
+            obj = json.loads(data)
+        except json.JSONDecodeError:
+            continue
+        choices = obj.get("choices") or [{}]
+        piece = (choices[0].get("delta") or {}).get("content")
+        if piece:
+            yield piece
+
+
 def call_llm(cfg: LlmConfig, messages: list[dict]) -> str:
-    """POST to {base_url}/chat/completions; raises RuntimeError on failure."""
+    """POST to {base_url}/chat/completions and stream the reply.
+
+    Streaming matters: a non-streamed request holds the socket idle for the
+    WHOLE generation, so the read timeout must cover cold model-load plus the
+    entire answer — which is exactly what timed out. Streaming makes the
+    timeout a per-chunk stall guard instead, so long generations succeed as
+    long as tokens keep arriving. Raises RuntimeError on any failure so the
+    caller can degrade gracefully.
+    """
     url = cfg.base_url.rstrip("/") + "/chat/completions"
     payload = json.dumps({
         "model": cfg.model,
         "messages": messages,
         "temperature": cfg.temperature,
         "max_tokens": cfg.max_tokens,
-        "stream": False,
+        "stream": True,
     }).encode("utf-8")
     req = urllib.request.Request(
         url, data=payload, headers={"Content-Type": "application/json"})
+    pieces: list[str] = []
     try:
         with urllib.request.urlopen(req, timeout=cfg.timeout) as resp:
-            data = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.URLError as exc:
+            pieces.extend(iter_stream_content(resp))
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
         raise RuntimeError(
-            f"連不上本地 LLM（{url}）：{exc}。"
-            "Ollama 是否在跑？（ollama serve / ollama pull "
-            f"{cfg.model}）") from exc
-    try:
-        content = data["choices"][0]["message"]["content"]
-    except (KeyError, IndexError) as exc:
-        raise RuntimeError(f"本地 LLM 回應格式異常：{data}") from exc
-    return strip_reasoning(content)
+            f"連不上或逾時（本地 LLM {url}）：{exc}。"
+            f"請確認 Ollama 在跑且模型已載入（ollama run {cfg.model} 先暖機），"
+            "或在 config 調高 llm.timeout。") from exc
+    if not pieces:
+        raise RuntimeError("本地 LLM 沒有回傳任何內容（模型是否存在？）")
+    return strip_reasoning("".join(pieces))
 
 
 def summarize_results(cfg: LlmConfig, results: list[ChatResult]) -> str | None:

@@ -163,7 +163,8 @@ class LlmConfig:
     model: str = "qwen3:8b"
     temperature: float = 0.2
     max_tokens: int = 1500
-    timeout: float = 300.0          # local first-token latency can be slow
+    timeout: float = 300.0          # per-chunk stall guard while streaming
+                                    # (covers cold model load before 1st token)
     max_chars_per_chat: int = 6000  # truncate very long chats to fit context
     system_prompt: str = (
         "你是使用者的個人行政助理。以下是使用者 LINE 對話的逐字稿"
