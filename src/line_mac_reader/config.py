@@ -161,6 +161,9 @@ class LlmConfig:
     enabled: bool = False
     base_url: str = "http://localhost:11434/v1"  # Ollama default
     model: str = "qwen3:8b"
+    api_key_env: str | None = None  # env var holding the key; None = no auth
+                                    # (local). For a cloud OpenAI-compatible
+                                    # endpoint (e.g. Gemini) name the var here.
     temperature: float = 0.2
     max_tokens: int = 1500
     timeout: float = 300.0          # per-chunk stall guard while streaming

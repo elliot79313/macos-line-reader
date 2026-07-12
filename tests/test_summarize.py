@@ -92,3 +92,15 @@ def test_iter_stream_content_skips_malformed_lines():
     lines = ["garbage", 'data: {bad json', 'data: {"choices":[{"delta":{}}]}',
              'data: {"choices":[{"delta":{"content":"OK"}}]}']
     assert "".join(iter_stream_content(lines)) == "OK"
+
+
+def test_missing_api_key_env_raises(monkeypatch):
+    from line_mac_reader.summarize import call_llm
+
+    monkeypatch.delenv("NOPE_MISSING_KEY", raising=False)
+    cfg = LlmConfig(api_key_env="NOPE_MISSING_KEY")
+    try:
+        call_llm(cfg, [{"role": "user", "content": "x"}])
+        assert False, "should have raised"
+    except RuntimeError as e:
+        assert "NOPE_MISSING_KEY" in str(e)

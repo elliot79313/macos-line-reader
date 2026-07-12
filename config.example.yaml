@@ -111,8 +111,16 @@ digest:                     # 訊息含任一關鍵字就列入「待辦候選�
 # llama.cpp server。安裝：brew install ollama && ollama pull qwen3:8b
 llm:
   enabled: false            # true = 每次執行都摘要（等同永遠帶 --summarize）
+  # --- 本地模型（預設，內容不出機器）---
   base_url: http://localhost:11434/v1
   model: qwen3:8b           # 繁中摘要建議 qwen3:8b；RAM 充裕可用 qwen3:14b / gemma3:12b
+  api_key_env: null         # 本地不需要；填環境變數名稱即改用雲端（見下方 Gemini 範例）
+  # --- 改用 Gemini（雲端，較快，但對話內容會送到 Google）---
+  #   先 export GEMINI_API_KEY=你的金鑰，再改成：
+  # base_url: https://generativelanguage.googleapis.com/v1beta/openai
+  # model: gemini-2.5-flash    # 或 gemini-2.0-flash（更省）
+  # api_key_env: GEMINI_API_KEY
+  # think: true                # 雲端不需要 /no_think（Gemini 不吃這指令）
   temperature: 0.2
   max_tokens: 1500
   timeout: 300              # 串流下為「片段間隔」上限；含冷啟動載入模型的等待

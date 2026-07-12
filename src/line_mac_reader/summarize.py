@@ -1,15 +1,17 @@
-"""Work-item summarization via a LOCAL LLM (--summarize).
+"""Work-item summarization via an OpenAI-compatible LLM (--summarize).
 
-Speaks the OpenAI-compatible chat-completions protocol over plain urllib,
-which covers Ollama (http://localhost:11434/v1), LM Studio
-(http://localhost:1234/v1) and llama.cpp's server with one code path.
-Everything stays on-machine: transcripts go to localhost and nowhere else.
+Speaks the OpenAI chat-completions protocol over plain urllib. With a
+localhost base_url (Ollama / LM Studio / llama.cpp) nothing leaves the
+machine. Point base_url at a cloud endpoint and set llm.api_key_env to use a
+hosted model instead — e.g. Gemini's OpenAI-compatible endpoint — in which
+case transcripts ARE sent to that provider.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import os
 import re
 import urllib.error
 import urllib.request
@@ -93,8 +95,15 @@ def call_llm(cfg: LlmConfig, messages: list[dict]) -> str:
         "max_tokens": cfg.max_tokens,
         "stream": True,
     }).encode("utf-8")
-    req = urllib.request.Request(
-        url, data=payload, headers={"Content-Type": "application/json"})
+    headers = {"Content-Type": "application/json"}
+    if cfg.api_key_env:
+        key = os.environ.get(cfg.api_key_env)
+        if not key:
+            raise RuntimeError(
+                f"環境變數 {cfg.api_key_env} 未設定——請 export "
+                f"{cfg.api_key_env}=你的_API_KEY，或把 llm.api_key_env 清空改用本地模型。")
+        headers["Authorization"] = f"Bearer {key}"
+    req = urllib.request.Request(url, data=payload, headers=headers)
     pieces: list[str] = []
     try:
         with urllib.request.urlopen(req, timeout=cfg.timeout) as resp:
@@ -115,6 +124,6 @@ def summarize_results(cfg: LlmConfig, results: list[ChatResult]) -> str | None:
     if not messages[1]["content"].strip():
         log.info("No readable chats to summarize")
         return None
-    log.info("Summarizing %d chat(s) with local model %s",
+    log.info("Summarizing %d chat(s) with model %s",
              sum(1 for r in results if r.messages and not r.error), cfg.model)
     return call_llm(cfg, messages)

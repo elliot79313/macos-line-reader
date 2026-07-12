@@ -168,6 +168,19 @@ line-mac-reader --config config.yaml --slack --summarize
 > **排程前必做**：用 `brew services start ollama` 設成背景服務，Ollama 才會在開機後自動在跑——否則每天早上 launchd 觸發時服務沒開，摘要會失敗（此時工具會降級：印警告、照送原始摘要）。驗證：`curl -s localhost:11434/api/tags` 有回應即代表服務在跑。
 
 - 走 OpenAI 相容 API（`llm.base_url`），Ollama / LM Studio / llama.cpp server 都通用。
+- **改用雲端 Gemini（較快，但對話內容會送到 Google）**：export 金鑰後改三行 config：
+  ```bash
+  export GEMINI_API_KEY=你的金鑰   # 建議寫進 ~/.zshrc；排程另見下方說明
+  ```
+  ```yaml
+  llm:
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai
+    model: gemini-2.5-flash        # 或 gemini-2.0-flash
+    api_key_env: GEMINI_API_KEY    # 從此環境變數讀金鑰（金鑰不進 config、不進 git）
+    think: true                    # 雲端不需要 /no_think
+  ```
+  金鑰只透過環境變數讀取，不寫進 config、不進版控。排程（launchd）不會自動載入
+  shell 的環境變數，需在 plist 的 `EnvironmentVariables` 區塊填入 `GEMINI_API_KEY`。
 - `llm.enabled: true` 可免帶旗標、每次都摘要（排程建議這樣設）。
 - LLM 掛掉或沒開**不會讓整次執行失敗**：印警告後照常送出原始摘要。
 - 推理型模型（qwen3）預設**關閉思考模式**（`llm.think: false` → 自動加 `/no_think`）：摘要用不到 chain-of-thought，關掉快 2–3 倍；殘留的 `<think>` 區塊仍會剝除。想看推理過程設 `think: true`。

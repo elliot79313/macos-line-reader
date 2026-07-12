@@ -34,6 +34,16 @@
   <key>WorkingDirectory</key>
   <string>/Users/YOURNAME/macos-line-reader</string>
 
+  <!-- 若用雲端 LLM（如 Gemini）：launchd 不會載入 shell 的環境變數，
+       金鑰必須在這裡填。純本地模型（Ollama）不需要這一段，可整段刪除。 -->
+  <!--
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>GEMINI_API_KEY</key>
+    <string>你的金鑰</string>
+  </dict>
+  -->
+
   <!-- 每天 08:30 執行；要多個時段就複製整個 dict 成 array -->
   <key>StartCalendarInterval</key>
   <dict>
