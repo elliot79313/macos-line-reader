@@ -115,8 +115,11 @@ llm:
   model: qwen3:8b           # 繁中摘要建議 qwen3:8b；RAM 充裕可用 qwen3:14b / gemma3:12b
   temperature: 0.2
   max_tokens: 1500
-  timeout: 300              # 本地模型首字延遲可能較長
+  timeout: 300              # 串流下為「片段間隔」上限；含冷啟動載入模型的等待
   max_chars_per_chat: 6000  # 單一對話逐字稿超過此長度只保留最新段落
+  think: false              # qwen3 等推理模型預設會先「思考」再回答，摘要用不到
+                            # 且慢 2-3 倍；false 會自動加 /no_think 關閉。想看
+                            # 推理過程再設 true
   # system_prompt 可自訂（見 config.py 預設值：今日待辦/待回覆/各對話重點）
 
 scroll:

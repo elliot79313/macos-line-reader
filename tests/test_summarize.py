@@ -59,6 +59,17 @@ def test_build_messages_skips_errors_and_empty():
     assert "空的" not in messages[1]["content"]
 
 
+def test_no_think_appended_by_default():
+    messages = build_messages([_result(messages=[_msg("hi")])], LlmConfig())
+    assert messages[0]["content"].rstrip().endswith("/no_think")
+
+
+def test_think_enabled_omits_directive():
+    messages = build_messages([_result(messages=[_msg("hi")])],
+                              LlmConfig(think=True))
+    assert "/no_think" not in messages[0]["content"]
+
+
 def test_strip_reasoning_removes_think_block():
     raw = "<think>讓我想想這些訊息…</think>1. *今日待辦*：回簽合約"
     assert strip_reasoning(raw) == "1. *今日待辦*：回簽合約"

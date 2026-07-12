@@ -166,10 +166,14 @@ class LlmConfig:
     timeout: float = 300.0          # per-chunk stall guard while streaming
                                     # (covers cold model load before 1st token)
     max_chars_per_chat: int = 6000  # truncate very long chats to fit context
+    think: bool = False             # qwen3 etc. reason before answering; that
+                                    # chain-of-thought is wasted on summaries
+                                    # and 2-3x slower, so append /no_think
     system_prompt: str = (
         "你是使用者的個人行政助理。以下是使用者 LINE 對話的逐字稿"
         "（由螢幕 OCR 取得，可能有少量錯字，請自行容錯）。\n"
-        "請用繁體中文輸出「隔天早上的工作提點」，格式為 Slack mrkdwn：\n"
+        "請用「繁體中文、台灣用語」輸出「隔天早上的工作提點」，"
+        "格式為 Slack mrkdwn，直接給結果、不要說明你的思考過程：\n"
         "1. *今日待辦*：從對話中萃取需要使用者採取行動的事項，"
         "每項一行，附上對話名稱與（若有）期限或時間。\n"
         "2. *待回覆*：對方在等使用者回覆的訊息。\n"

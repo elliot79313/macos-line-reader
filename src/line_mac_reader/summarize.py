@@ -40,8 +40,13 @@ def chat_to_text(r: ChatResult, max_chars: int) -> str:
 def build_messages(results: list[ChatResult], cfg: LlmConfig) -> list[dict]:
     transcripts = [chat_to_text(r, cfg.max_chars_per_chat)
                    for r in results if r.messages and not r.error]
+    system = cfg.system_prompt
+    if not cfg.think:
+        # qwen3 & friends: this soft switch disables the <think> phase. Models
+        # that don't recognize it just see a harmless trailing token.
+        system += "\n/no_think"
     return [
-        {"role": "system", "content": cfg.system_prompt},
+        {"role": "system", "content": system},
         {"role": "user", "content": "\n\n".join(transcripts)},
     ]
 

@@ -170,7 +170,8 @@ line-mac-reader --config config.yaml --slack --summarize
 - 走 OpenAI 相容 API（`llm.base_url`），Ollama / LM Studio / llama.cpp server 都通用。
 - `llm.enabled: true` 可免帶旗標、每次都摘要（排程建議這樣設）。
 - LLM 掛掉或沒開**不會讓整次執行失敗**：印警告後照常送出原始摘要。
-- 推理型模型（qwen3）的 `<think>` 思考區塊會自動剝除。
+- 推理型模型（qwen3）預設**關閉思考模式**（`llm.think: false` → 自動加 `/no_think`）：摘要用不到 chain-of-thought，關掉快 2–3 倍；殘留的 `<think>` 區塊仍會剝除。想看推理過程設 `think: true`。
+- 首次呼叫會冷啟動載入模型（較久）；`brew services start ollama` 常駐後，模型在記憶體內就快了。可先 `ollama run <model> "hi"` 暖機。
 - 提示詞在 `llm.system_prompt` 可整段換成你的口吻與格式要求。
 
 ## 分析輸出、維護黑名單
