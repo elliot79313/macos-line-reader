@@ -362,12 +362,19 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             return 1
         try:
+            sent = False
             if summary:
-                send_slack(webhook, f"🤖 *工作提點（本地 LLM）*\n{summary}")
-            n = send_digest(webhook, results, now,
-                            cfg.digest.action_keywords,
-                            cfg.slack.max_messages_per_chat)
-            print("Slack 摘要已送出。" if n or summary else "沒有新訊息，未送 Slack。")
+                send_slack(webhook, f"🤖 *工作提點*\n{summary}")
+                sent = True
+            # Raw per-message transcript: only when there is no summary
+            # (fallback so something still arrives), or when explicitly
+            # opted back in. A successful summary replaces it by default.
+            if not summary or cfg.slack.include_raw_digest:
+                n = send_digest(webhook, results, now,
+                                cfg.digest.action_keywords,
+                                cfg.slack.max_messages_per_chat)
+                sent = sent or bool(n)
+            print("Slack 已送出。" if sent else "沒有新訊息，未送 Slack。")
         except RuntimeError as exc:
             print(f"錯誤：{exc}", file=sys.stderr)
             return 1

@@ -128,6 +128,9 @@ class ScrollConfig:
 class SlackConfig:
     webhook_url: str | None = None  # Slack Incoming Webhook
     max_messages_per_chat: int = 30  # digest truncates long chats past this
+    include_raw_digest: bool = False  # when a summary is sent, also post the
+                                      # full per-message transcript. Off = the
+                                      # LLM summary replaces it.
 
 
 @dataclass

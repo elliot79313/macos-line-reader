@@ -147,7 +147,7 @@ line-mac-reader --reset                                  # 清空所有 last_rea
 
 ## 地端 LLM 工作摘要（--summarize）
 
-把當次讀到的對話逐字稿丟給**本機的 LLM**，產出「今日待辦／待回覆／各對話重點」，加上 `--slack` 時會以獨立訊息先貼到 Slack，再附原始摘要。**內容只送 localhost，不出機器**——與整條 pipeline 的地端原則一致。
+把當次讀到的對話逐字稿丟給 LLM，產出「今日待辦／待回覆／各對話重點」。加上 `--slack` 時，**預設只送這份工作摘要**到 Slack（不送整份逐則訊息）；LLM 失敗或未啟用時，才退回送原始逐則摘要，確保你至少收得到東西。想兩者都送，把 `slack.include_raw_digest` 設為 `true`。用本地模型時內容只送 localhost、不出機器。
 
 ```bash
 # 一次性安裝（Ollama）

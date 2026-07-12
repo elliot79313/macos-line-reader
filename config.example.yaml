@@ -95,7 +95,10 @@ timing:                     # seconds; raise these on slower machines
 slack:
   webhook_url: null         # Slack Incoming Webhook，例：
                             # https://hooks.slack.com/services/T000/B000/XXXX
-  max_messages_per_chat: 30 # 摘要中每個對話最多列幾則（超過的看 output JSON）
+  max_messages_per_chat: 30 # 原始逐則摘要中每個對話最多列幾則
+  include_raw_digest: false # 有 LLM 工作摘要時，是否「另外」再送整份逐則訊息。
+                            # false = 只送工作摘要（LLM 失敗時才退回逐則）；
+                            # true = 摘要 + 逐則兩則都送
 
 filters:
   exclude_chats: []         # 未讀掃描/--all 要跳過的對話（子字串比對，不分大小寫）
