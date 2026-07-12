@@ -152,11 +152,20 @@ line-mac-reader --reset                                  # 清空所有 last_rea
 ```bash
 # 一次性安裝（Ollama）
 brew install ollama
-ollama pull qwen3:8b        # 繁中摘要品質好的小模型；32GB+ RAM 可用 qwen3:14b
+
+# 啟動 Ollama 服務（CLI 版不會自動常駐，pull/執行前都需要它在跑）
+brew services start ollama   # 設為背景服務並開機自啟（排程必須這樣）
+#   或前景手動跑：ollama serve   （關掉終端機就停，僅適合臨時測試）
+
+ollama pull qwen3:8b         # 繁中摘要品質好的小模型；32GB+ RAM 可用 qwen3:14b
 
 # 執行
 line-mac-reader --config config.yaml --slack --summarize
 ```
+
+> **Ollama.app（官網 GUI 版）**開啟後會自動常駐服務，可略過 `brew services` 這步；用 `brew install ollama`（純 CLI）則**必須**先啟動服務，否則 `ollama pull` 與摘要都會連不上 `localhost:11434`。
+>
+> **排程前必做**：用 `brew services start ollama` 設成背景服務，Ollama 才會在開機後自動在跑——否則每天早上 launchd 觸發時服務沒開，摘要會失敗（此時工具會降級：印警告、照送原始摘要）。驗證：`curl -s localhost:11434/api/tags` 有回應即代表服務在跑。
 
 - 走 OpenAI 相容 API（`llm.base_url`），Ollama / LM Studio / llama.cpp server 都通用。
 - `llm.enabled: true` 可免帶旗標、每次都摘要（排程建議這樣設）。
