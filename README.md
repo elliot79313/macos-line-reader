@@ -145,6 +145,17 @@ line-mac-reader --reset                                  # 清空所有 last_rea
 
 每個對話成功讀完後，`state.sqlite3` 會把該對話的 `last_read_at` 更新為本次 `run_at`；下次執行只讀這之後的訊息。`--dry-run` 不更新、`--reset` 清空。狀態鍵是 **OCR 到的對話名稱**（風險見下）。
 
+## 分析輸出、維護黑名單
+
+```bash
+python scripts/analyze_output.py                          # 分析 output/ 最新一份
+python scripts/analyze_output.py output/2026*.json --config config.yaml   # 多份合併＋比對現有 filter
+```
+
+報告分五區：🚫 **建議加入 filter**（多訊號計分：機構/品牌名稱、行銷用語密度、連結比例、單向性、量體——每個建議都附得分原因）、🤔 **邊緣案例**（人工判斷）、✅ **建議保留**、⚠️ **應被擋卻出現**（filter 沒套用到）、❌ **讀取失敗**。最後輸出合併現有清單、可直接貼回 `config.yaml` 的 `exclude_chats`。純讀取，不動任何狀態。
+
+> 注意：官方帳號的全寬卡片會被版面解析誤標成「我方」訊息，所以報告裡的「我方 %」對官方帳號偏高，計分已將此納入考量（參與度只作輔助訊號）。
+
 ## 每日自動摘要到 Slack（客戶討論 → 隔天早上待辦提點）
 
 工作流：每天早上排程自動執行 → 讀取所有未讀對話（官方帳號黑名單先剔除）→ 存 JSON（`output/` 就是完整存檔）→ 把摘要推到 Slack Incoming Webhook，含「待辦候選」置頂區（訊息含「請/合約/報價/確認…」等關鍵字者，關鍵字在 config 可調）。
