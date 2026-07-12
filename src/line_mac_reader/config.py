@@ -153,6 +153,32 @@ class DigestConfig:
 
 
 @dataclass
+class LlmConfig:
+    """Local-LLM summarization (--summarize). Talks to any OpenAI-compatible
+    endpoint on localhost — Ollama (/v1), LM Studio, llama.cpp server — so
+    chat content never leaves the machine."""
+
+    enabled: bool = False
+    base_url: str = "http://localhost:11434/v1"  # Ollama default
+    model: str = "qwen3:8b"
+    temperature: float = 0.2
+    max_tokens: int = 1500
+    timeout: float = 300.0          # local first-token latency can be slow
+    max_chars_per_chat: int = 6000  # truncate very long chats to fit context
+    system_prompt: str = (
+        "你是使用者的個人行政助理。以下是使用者 LINE 對話的逐字稿"
+        "（由螢幕 OCR 取得，可能有少量錯字，請自行容錯）。\n"
+        "請用繁體中文輸出「隔天早上的工作提點」，格式為 Slack mrkdwn：\n"
+        "1. *今日待辦*：從對話中萃取需要使用者採取行動的事項，"
+        "每項一行，附上對話名稱與（若有）期限或時間。\n"
+        "2. *待回覆*：對方在等使用者回覆的訊息。\n"
+        "3. *各對話重點*：每個工作相關對話一到兩句摘要。\n"
+        "純閒聊、貼圖、與工作無關的內容請略過不提。"
+        "沒有工作相關內容時，輸出「（本次無工作相關事項）」。"
+    )
+
+
+@dataclass
 class Config:
     timezone: str = "Asia/Taipei"
     fallback_hours: int = 48
@@ -169,6 +195,7 @@ class Config:
     slack: SlackConfig = field(default_factory=SlackConfig)
     filters: FiltersConfig = field(default_factory=FiltersConfig)
     digest: DigestConfig = field(default_factory=DigestConfig)
+    llm: LlmConfig = field(default_factory=LlmConfig)
 
 
 def _rect_from(d: dict[str, Any]) -> Rect:
@@ -213,7 +240,7 @@ def load_config(path: str | Path | None) -> Config:
     for section, obj in (("ocr", cfg.ocr), ("layout", cfg.layout),
                          ("timing", cfg.timing), ("scroll", cfg.scroll),
                          ("slack", cfg.slack), ("filters", cfg.filters),
-                         ("digest", cfg.digest)):
+                         ("digest", cfg.digest), ("llm", cfg.llm)):
         if section in data:
             for k, v in data[section].items():
                 if hasattr(obj, k):

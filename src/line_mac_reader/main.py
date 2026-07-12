@@ -52,6 +52,10 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--slack-webhook", default=None, metavar="URL",
                    help="Slack Incoming Webhook URL (implies --slack, "
                         "overrides config)")
+    p.add_argument("--summarize", action="store_true",
+                   help="Summarize work items with the LOCAL LLM configured "
+                        "under llm: (Ollama/LM Studio; nothing leaves the "
+                        "machine). With --slack, the summary is posted first.")
     return p
 
 
@@ -331,9 +335,25 @@ def main(argv: list[str] | None = None) -> int:
     if args.dry_run:
         print("(dry-run：未更新 last_read 狀態)")
 
+    # --- local-LLM work summary ----------------------------------------------
+    summary: str | None = None
+    if args.summarize or cfg.llm.enabled:
+        from .summarize import summarize_results
+
+        try:
+            summary = summarize_results(cfg.llm, results)
+            if summary:
+                print("\n===== 本地 LLM 工作摘要 =====")
+                print(summary)
+        except RuntimeError as exc:
+            # A dead local LLM must not sink the run — the raw digest still
+            # goes out below.
+            print(f"警告：LLM 摘要失敗（{exc}），僅送出原始摘要。",
+                  file=sys.stderr)
+
     # --- Slack digest ---------------------------------------------------------
     if args.slack or args.slack_webhook:
-        from .notify import send_digest
+        from .notify import send_digest, send_slack
 
         webhook = args.slack_webhook or cfg.slack.webhook_url
         if not webhook:
@@ -342,10 +362,12 @@ def main(argv: list[str] | None = None) -> int:
                   file=sys.stderr)
             return 1
         try:
+            if summary:
+                send_slack(webhook, f"🤖 *工作提點（本地 LLM）*\n{summary}")
             n = send_digest(webhook, results, now,
                             cfg.digest.action_keywords,
                             cfg.slack.max_messages_per_chat)
-            print("Slack 摘要已送出。" if n else "沒有新訊息，未送 Slack。")
+            print("Slack 摘要已送出。" if n or summary else "沒有新訊息，未送 Slack。")
         except RuntimeError as exc:
             print(f"錯誤：{exc}", file=sys.stderr)
             return 1

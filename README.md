@@ -145,6 +145,25 @@ line-mac-reader --reset                                  # 清空所有 last_rea
 
 每個對話成功讀完後，`state.sqlite3` 會把該對話的 `last_read_at` 更新為本次 `run_at`；下次執行只讀這之後的訊息。`--dry-run` 不更新、`--reset` 清空。狀態鍵是 **OCR 到的對話名稱**（風險見下）。
 
+## 地端 LLM 工作摘要（--summarize）
+
+把當次讀到的對話逐字稿丟給**本機的 LLM**，產出「今日待辦／待回覆／各對話重點」，加上 `--slack` 時會以獨立訊息先貼到 Slack，再附原始摘要。**內容只送 localhost，不出機器**——與整條 pipeline 的地端原則一致。
+
+```bash
+# 一次性安裝（Ollama）
+brew install ollama
+ollama pull qwen3:8b        # 繁中摘要品質好的小模型；32GB+ RAM 可用 qwen3:14b
+
+# 執行
+line-mac-reader --config config.yaml --slack --summarize
+```
+
+- 走 OpenAI 相容 API（`llm.base_url`），Ollama / LM Studio / llama.cpp server 都通用。
+- `llm.enabled: true` 可免帶旗標、每次都摘要（排程建議這樣設）。
+- LLM 掛掉或沒開**不會讓整次執行失敗**：印警告後照常送出原始摘要。
+- 推理型模型（qwen3）的 `<think>` 思考區塊會自動剝除。
+- 提示詞在 `llm.system_prompt` 可整段換成你的口吻與格式要求。
+
 ## 分析輸出、維護黑名單
 
 ```bash
