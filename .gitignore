@@ -1,0 +1,12 @@
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# runtime artifacts (contain private chat content — never commit)
+config.yaml
+state.sqlite3
+output/
+debug/

@@ -1,0 +1,11 @@
+PyYAML>=6.0
+numpy>=1.26
+opencv-python>=4.9
+Pillow>=10.0
+mss>=9.0
+pyautogui>=0.9.54
+pytesseract>=0.3.10
+pyobjc-framework-Cocoa>=10.0; sys_platform == "darwin"
+pyobjc-framework-Quartz>=10.0; sys_platform == "darwin"
+pyobjc-framework-ApplicationServices>=10.0; sys_platform == "darwin"
+pyobjc-framework-Vision>=10.0; sys_platform == "darwin"

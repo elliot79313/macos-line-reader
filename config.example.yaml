@@ -1,0 +1,145 @@
+# line-mac-reader configuration.
+# Copy to config.yaml and calibrate with scripts/diagnose_badges.py.
+# All coordinates are LOGICAL (point) pixels, i.e. what you see in
+# macOS "Screenshot" cross-hair — NOT Retina physical pixels.
+
+timezone: Asia/Taipei
+fallback_hours: 48          # rolling window when a chat has no last-read record
+output_dir: output
+debug_dir: debug
+state_db: state.sqlite3
+
+window:
+  move_window: true         # pin the LINE window for stable coordinates
+  x: 0
+  y: 25
+  width: 1100
+  height: 800
+
+# Regions are relative to the window's top-left corner (logical px).
+# Calibrate: run `python scripts/diagnose_badges.py --config config.yaml`
+# and adjust until the overlay boxes line up.
+regions:
+  chat_list:                # 側邊清單，必須含右側的時間/未讀 badge 欄（到分隔線為止）
+    x: 70
+    y: 90
+    width: 350
+    height: 690
+  messages:                 # 訊息逐字稿區：上緣在標題列之下、下緣在輸入列之上
+    x: 425
+    y: 115
+    width: 660
+    height: 570
+  chat_title:               # 開啟對話的「標題列」——注意是標題那一行，不是上方的分頁列
+    x: 425
+    y: 75
+    width: 550
+    height: 38
+  search_box:               # the sidebar search field (used by --chat)
+    x: 80
+    y: 52
+    width: 250
+    height: 30
+  row_height: 68            # approximate height of one chat-list row
+  list_bottom_exclude: 110  # 聊天清單底部保留區（邏輯 px）：LINE 的廣告橫幅在
+                            # 清單最下方，這段永遠不當成對話列、不點擊。
+                            # 沒有廣告（付費版/畫面較高）可調小；診斷圖以紅框標示
+
+# Unread badge detection: HSV color mask + contour filtering.
+# LINE currently uses a green badge (~#06C755). If your build shows a
+# different color, sample it with the diagnostic script's --sample flag.
+# OpenCV HSV ranges: H 0-179, S 0-255, V 0-255. Areas are physical px².
+badge:
+  hsv_lower: [55, 120, 120]
+  hsv_upper: [85, 255, 255]
+  min_area: 40
+  max_area: 2500
+  min_aspect: 0.6
+  max_aspect: 3.0
+  min_x_ratio: 0.6          # badge 一定在列的右側；左側的綠色色塊是頭像上的
+                            # logo（ALLinAI 的 Q、LINE禮物的禮物盒），一律忽略
+
+ocr:
+  engine: vision            # vision = Apple Vision framework（推薦，繁中準確度高、速度快）
+                            # tesseract = 備援（需 brew install tesseract tesseract-lang）
+  vision_languages: [zh-Hant, ja, en]
+  custom_words: []          # 提升人名/術語辨識率：把常出現的名字、暱稱、行話列進來
+                            # 例：custom_words: [郭毅驊, 何美雲, 基隆, 出帳]
+                            # （對話名稱不用列，程式讀取時會自動帶入）
+  retry_below: 0.8          # 信心低於此值的行會裁圖放大重辨識一次（0 = 關閉）
+  retry_upscale: 2.0        # 重辨識時的放大倍數
+  min_confidence: 0.5       # messages below this get flagged in output
+  # ---- tesseract-only（engine: tesseract 時才生效）----
+  lang: chi_tra+jpn+eng
+  psm: 6                    # single uniform block; try 7 for single lines
+  upscale: 2.5              # 2-3x upscaling markedly improves chi_tra accuracy
+  binarize: true            # Otsu threshold after grayscale
+  invert_dark_background: true
+  tesseract_cmd: null       # e.g. /opt/homebrew/bin/tesseract
+
+layout:                     # whole-screen OCR -> bubble reconstruction
+  side_ratio: 0.40          # 行左緣 < 寬度*此比例 => 對方訊息（左側氣泡）
+  bubble_gap: 18            # 垂直間距（邏輯 px）大於此值切成不同氣泡
+  separator_max_chars: 14   # 日期分隔列的最大字數
+  separator_center_band: [0.25, 0.75]  # 日期分隔列必須落在畫面中間帶
+
+timing:                     # seconds; raise these on slower machines
+  app_launch_wait: 3.0
+  chat_open_wait: 1.0
+  scroll_wait: 0.3          # 捲動後等 UI 重繪的時間（截圖模糊/缺訊息就調大）
+  click_wait: 0.3
+  search_wait: 1.0          # after typing a query into the search box
+  pyautogui_pause: 0.05     # pyautogui 每個動作的內建停頓
+
+# ---- 每日 Slack 摘要（--slack）----
+slack:
+  webhook_url: null         # Slack Incoming Webhook，例：
+                            # https://hooks.slack.com/services/T000/B000/XXXX
+  max_messages_per_chat: 30 # 原始逐則摘要中每個對話最多列幾則
+  include_raw_digest: false # 有 LLM 工作摘要時，是否「另外」再送整份逐則訊息。
+                            # false = 只送工作摘要（LLM 失敗時才退回逐則）；
+                            # true = 摘要 + 逐則兩則都送
+
+filters:
+  exclude_chats: []         # 未讀掃描/--all 要跳過的對話（子字串比對，不分大小寫）
+                            # 例：exclude_chats: [官方帳號, 客服, LINE Pay, 電信, 銀行]
+                            # 注意：--chat 明確指定的對話不受此黑名單影響
+
+digest:                     # 訊息含任一關鍵字就列入「待辦候選」置頂區
+  action_keywords: [請, 麻煩, 記得, 需要, 確認, 回覆, 報價, 合約, 簽, 截止, 付款, 會議, 約]
+
+# ---- 地端 LLM 工作摘要（--summarize）----
+# 對話內容只送到 localhost 的本地模型，不出機器。
+# 支援任何 OpenAI 相容端點：Ollama（預設）、LM Studio（http://localhost:1234/v1）、
+# llama.cpp server。安裝：brew install ollama && ollama pull qwen3:8b
+llm:
+  enabled: false            # true = 每次執行都摘要（等同永遠帶 --summarize）
+  # --- 本地模型（預設，內容不出機器）---
+  base_url: http://localhost:11434/v1
+  model: qwen3:8b           # 繁中摘要建議 qwen3:8b；RAM 充裕可用 qwen3:14b / gemma3:12b
+  api_key_env: null         # 本地不需要；填環境變數名稱即改用雲端（見下方 Gemini 範例）
+  # --- 改用 Gemini（雲端，較快，但對話內容會送到 Google）---
+  #   先 export GEMINI_API_KEY=你的金鑰，再改成：
+  # base_url: https://generativelanguage.googleapis.com/v1beta/openai
+  # model: gemini-2.5-flash    # 或 gemini-2.0-flash（更省）
+  # api_key_env: GEMINI_API_KEY
+  # think: true                # 雲端不需要 /no_think（Gemini 不吃這指令）
+  temperature: 0.2
+  max_tokens: 1500
+  timeout: 300              # 串流下為「片段間隔」上限；含冷啟動載入模型的等待
+  max_chars_per_chat: 6000  # 單一對話逐字稿超過此長度只保留最新段落
+  think: false              # qwen3 等推理模型預設會先「思考」再回答，摘要用不到
+                            # 且慢 2-3 倍；false 會自動加 /no_think 關閉。想看
+                            # 推理過程再設 true
+  # system_prompt 可自訂（見 config.py 預設值：今日待辦/待回覆/各對話重點）
+
+scroll:
+  mode: pixel               # pixel = 原生像素捲動，一步捲大約一頁（快，推薦）
+                            # wheel = pyautogui 滾輪（慢，備援）
+  page_fraction: 0.75       # pixel 模式一步捲動「訊息區高度」的比例；<1 保留重疊供去重
+  step: 12                  # wheel 模式：每步滾輪格數
+  max_scrolls: 60           # hard cap per chat
+  stall_limit: 3            # identical consecutive screens => reached top
+  cutoff_check_every: 3     # 快速連拍時每 N 張做一次「是否已捲過 cutoff」檢查
+  max_list_pages: 8         # 未讀掃描/--all 逐頁往下捲「聊天清單」的頁數上限
+                            # （每頁約 page_fraction 個清單高度，捲到底自動停）

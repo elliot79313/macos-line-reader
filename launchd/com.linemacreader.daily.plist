@@ -1,0 +1,64 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"
+  "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  每日自動讀取 LINE 並推送 Slack 摘要的 launchd 排程範本。
+
+  安裝步驟（把 /Users/YOURNAME/macos-line-reader 全部換成你的實際路徑）：
+    1. 修改下方兩處路徑與執行時間（StartCalendarInterval）
+    2. cp launchd/com.linemacreader.daily.plist ~/Library/LaunchAgents/
+    3. launchctl load ~/Library/LaunchAgents/com.linemacreader.daily.plist
+  卸載：launchctl unload ~/Library/LaunchAgents/com.linemacreader.daily.plist
+  手動觸發測試：launchctl start com.linemacreader.daily
+
+  重要前提：排程觸發當下 Mac 必須是「醒著且已登入解鎖」，LINE 已登入。
+  建議把時間設在你固定坐在電腦前的時段（例如上班日早上 08:30）。
+
+  若有啟用 --summarize（本地 LLM 摘要）：Ollama 服務必須在背景常駐，
+  請先執行 `brew services start ollama`（開機自啟）。否則排程觸發時
+  Ollama 沒開，摘要會失敗（工具會降級：印警告、照送原始摘要）。
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.linemacreader.daily</string>
+
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/YOURNAME/macos-line-reader/.venv/bin/line-mac-reader</string>
+    <string>--config</string>
+    <string>/Users/YOURNAME/macos-line-reader/config.yaml</string>
+    <string>--slack</string>
+  </array>
+
+  <key>WorkingDirectory</key>
+  <string>/Users/YOURNAME/macos-line-reader</string>
+
+  <!-- 若用雲端 LLM（如 Gemini）：launchd 不會載入 shell 的環境變數，
+       金鑰必須在這裡填。純本地模型（Ollama）不需要這一段，可整段刪除。 -->
+  <!--
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>GEMINI_API_KEY</key>
+    <string>你的金鑰</string>
+  </dict>
+  -->
+
+  <!-- 每天 08:30 執行；要多個時段就複製整個 dict 成 array -->
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>8</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+
+  <key>StandardOutPath</key>
+  <string>/Users/YOURNAME/macos-line-reader/launchd.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/YOURNAME/macos-line-reader/launchd.err.log</string>
+
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>
